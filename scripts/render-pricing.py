@@ -37,7 +37,7 @@ for p in data['options']:
     body+=f'<article class="option"><h3>{p["name"]}</h3><p class="option-price">{p["price"]}</p>'+(f'<p>{p["detail"]}</p>' if p['detail'] else '')+'</article>'
 body+='</div></section>'
 body+='<section id="conditions" class="section guide-section"><div class="wrap"><div class="section-heading"><h2>ご依頼の前に。</h2><p>納期・修正・追加料金について、ご確認ください。</p></div><ul class="conditions">'+''.join('<li>'+c+'</li>' for c in data['conditions'])+'</ul></div></section>'
-body+='''<section class="contact-section wrap"><h2>つくりたいものが、見つかったら。</h2><p>その他の制作物についても、お気軽にご相談ください。</p><button class="button" data-contact>制作について相談する ↗</button></section></main>'''
+body+='''</main>'''
 pricing=root/'pricing';pricing.mkdir(exist_ok=True)
 (pricing/'index.html').write_text(header+intro+body+footer,encoding='utf-8')
 for path in [root/'index.html',root/'creators/kaerunoankake/index.html']:
