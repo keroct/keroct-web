@@ -31,6 +31,13 @@
         {
           "file": "tept-logo.jpg",
           "alt": "てぷと様 ロゴデザイン"
+        },
+        {
+          "file": "work-06.jpg",
+          "creator": "sensuishi13",
+          "alt": "潜水士13号 / エンブレムロゴ",
+          "width": 1068,
+          "height": 1068
         }
       ]
     },
@@ -192,6 +199,29 @@
           "name": "フルオーダー",
           "price": "¥10,000〜",
           "detail": "サイズやご要望により変動"
+        }
+      ],
+      "examples": [
+        {
+          "file": "work-01.jpg",
+          "creator": "sensuishi13",
+          "alt": "潜水士13号 / キャラクターイラスト",
+          "width": 1068,
+          "height": 1068
+        },
+        {
+          "file": "work-04.jpg",
+          "creator": "sensuishi13",
+          "alt": "潜水士13号 / キャラクターイラスト",
+          "width": 1068,
+          "height": 1068
+        },
+        {
+          "file": "work-05.jpg",
+          "creator": "sensuishi13",
+          "alt": "潜水士13号 / 誕生日イラスト",
+          "width": 1068,
+          "height": 1068
         }
       ]
     }

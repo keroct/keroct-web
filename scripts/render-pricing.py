@@ -15,8 +15,9 @@ def groups(entries):
         if entry.get('examples'):
             result+='<div class="price-examples" aria-label="制作例">'
             for example in entry['examples']:
-                src='../assets/works/kaerunoankake/'+example['file']
-                result+=f'<figure><a href="{src}" target="_blank" rel="noopener" aria-label="{example["alt"]}を拡大表示"><img src="{src}" alt="{example["alt"]}" loading="lazy" width="1920" height="1080"></a><figcaption>{example["alt"]}</figcaption></figure>'
+                src='../assets/works/'+example.get('creator','kaerunoankake')+'/'+example['file']
+                width=example.get('width',1920); height=example.get('height',1080)
+                result+=f'<figure><a href="{src}" target="_blank" rel="noopener" aria-label="{example["alt"]}を拡大表示"><img src="{src}" alt="{example["alt"]}" loading="lazy" width="{width}" height="{height}"></a><figcaption>{example["alt"]}</figcaption></figure>'
             result+='</div>'
         result+='</article>'
     return result
