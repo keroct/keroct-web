@@ -55,3 +55,7 @@ python scripts/render-pricing.py
 ```
 
 提供された2026年10月1日・2日の案内を転記しています。ミニ色紙はユーザー確認により画像の¥20,000を採用しました。スケジュール表の重複は一つにまとめています。税区分の記載は提供資料にありません。
+
+## Windows配信向け補助機能
+
+OBS Studioの起動中だけtawk.to Desktopの音声セッションをミュートする補助機能を追加しています。導入、削除、read-only診断、復元規則、制限、テストは [Windows音声ガードのREADME](tools/windows/obs-tawk-quiet/README.md) を参照してください。Webサイトとは独立した任意導入のツールです。
