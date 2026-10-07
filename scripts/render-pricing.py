@@ -11,7 +11,14 @@ def groups(entries):
             result+=f'<div class="price-item"><dt>{p["name"]}</dt><dd class="price-value">{p["price"]}</dd>'
             if p['detail']:result+=f'<dd class="price-detail">{p["detail"]}</dd>'
             result+='</div>'
-        result+='</dl></article>'
+        result+='</dl>'
+        if entry.get('examples'):
+            result+='<div class="price-examples" aria-label="制作例">'
+            for example in entry['examples']:
+                src='../assets/works/kaerunoankake/'+example['file']
+                result+=f'<figure><a href="{src}" target="_blank" rel="noopener" aria-label="{example["alt"]}を拡大表示"><img src="{src}" alt="{example["alt"]}" loading="lazy" width="1920" height="1080"></a><figcaption>{example["alt"]}</figcaption></figure>'
+            result+='</div>'
+        result+='</article>'
     return result
 home=(root/'index.html').read_text(encoding='utf-8')
 header=home[:home.index('<main')]

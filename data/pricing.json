@@ -18,6 +18,20 @@
           "price": "¥18,000",
           "detail": "提案1案 / メインロゴ / ロゴバリエーション展開 / 白・単色ロゴ"
         }
+      ],
+      "examples": [
+        {
+          "file": "suichan-logo.jpg",
+          "alt": "すいちゃん寝る様 ロゴデザイン"
+        },
+        {
+          "file": "soyo-symbol.jpg",
+          "alt": "白桜そよ様 シンボルロゴ"
+        },
+        {
+          "file": "tept-logo.jpg",
+          "alt": "てぷと様 ロゴデザイン"
+        }
       ]
     },
     {
@@ -62,6 +76,12 @@
           "name": "ヘッダー",
           "price": "¥9,000",
           "detail": ""
+        }
+      ],
+      "examples": [
+        {
+          "file": "soyo-header.jpg",
+          "alt": "白桜そよ様 ヘッダー"
         }
       ]
     },
