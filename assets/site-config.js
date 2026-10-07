@@ -1,3 +1,2 @@
-// Set the KEROCT property and widget IDs after the team enables tawk.to.
-// No third-party chat script loads while these are empty.
-window.KEROCT_CONFIG = Object.freeze({tawkPropertyId: '', tawkWidgetId: ''});
+// KEROCT chat loads when a visitor opens the consultation button.
+window.KEROCT_CONFIG = Object.freeze({tawkPropertyId: '6ac5d17ecc4acf34c8811599', tawkWidgetId: '1k4abklts'});
