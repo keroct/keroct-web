@@ -84,7 +84,12 @@ namespace Keroct.Quiet {
                             IAudioSessionControl2 control = null;
                             try {
                                 NativeSession.Check(sessions.GetSession(i, out control)); uint pid;
-                                if (control.GetProcessId(out pid) != 0 || control.IsSystemSoundsSession() == 0) continue;
+                                int processResult = control.GetProcessId(out pid);
+                                NativeSession.Check(processResult);
+                                if (processResult != 0) continue; // AUDCLNT_S_NO_SINGLE_PROCESS: intentionally unsupported.
+                                int systemSoundsResult = control.IsSystemSoundsSession();
+                                NativeSession.Check(systemSoundsResult);
+                                if (systemSoundsResult == 0) continue;
                                 TargetProcess target; if (!targets.TryGetValue((int)pid, out target)) continue;
                                 int state; NativeSession.Check(control.GetState(out state)); if (state == 2) continue; // expired
                                 string instance; NativeSession.Check(control.GetSessionInstanceIdentifier(out instance));
