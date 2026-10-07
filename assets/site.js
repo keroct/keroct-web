@@ -53,12 +53,25 @@ document.querySelectorAll('dialog').forEach(dialog => {
 const config = window.KEROCT_CONFIG || {};
 const contactDialog = document.querySelector('#contact-dialog');
 const chatConfigured = /^[a-f0-9]{24}$/.test(config.tawkPropertyId || '') && /^[a-zA-Z0-9]+$/.test(config.tawkWidgetId || '');
+const chatLauncher = document.createElement('button');
+chatLauncher.type = 'button';
+chatLauncher.className = 'button chat-launcher';
+chatLauncher.dataset.contact = '';
+chatLauncher.textContent = '制作を相談する';
+document.body.appendChild(chatLauncher);
 let chatLoad;
 function loadChat() {
   if (chatLoad) return chatLoad;
   chatLoad = new Promise((resolve, reject) => {
     window.Tawk_API = window.Tawk_API || {};
     window.Tawk_API.onLoad = resolve;
+    window.Tawk_API.onChatMaximized = () => { chatLauncher.hidden = true; };
+    window.Tawk_API.onChatMinimized = () => {
+      window.Tawk_API.hideWidget();
+      chatLauncher.hidden = false;
+      chatLauncher.focus({ preventScroll: true });
+    };
+    window.Tawk_API.onChatHidden = () => { chatLauncher.hidden = false; };
     window.Tawk_LoadStart = new Date();
     const script = document.createElement('script');
     script.src = `https://embed.tawk.to/${config.tawkPropertyId}/${config.tawkWidgetId}`;
@@ -73,7 +86,7 @@ document.querySelectorAll('[data-contact]').forEach(button => button.addEventLis
   if (!chatConfigured) { contactDialog.showModal(); return; }
   const content = document.querySelector('#contact-content');
   content.textContent = '相談窓口を読み込んでいます。'; contactDialog.showModal();
-  try { await loadChat(); contactDialog.close(); window.Tawk_API.maximize(); }
+  try { await loadChat(); contactDialog.close(); window.Tawk_API.showWidget(); window.Tawk_API.maximize(); }
   catch { content.textContent = '相談窓口を読み込めませんでした。時間をおいて再度お試しください。'; }
 }));
 document.querySelectorAll('.work-image img').forEach(image => image.addEventListener('error', () => {

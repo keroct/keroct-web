@@ -767,3 +767,24 @@ dialog::backdrop {
 .price-examples{display:grid;gap:18px;margin-top:28px}.price-examples figure{margin:0}.price-examples a{display:block}.price-examples img{display:block;width:100%;height:auto;border-radius:4px}.price-examples figcaption{font-size:.8rem;color:var(--muted);margin-top:8px}
 
 .price-examples:has(figure:nth-child(2)){grid-template-columns:repeat(2,minmax(0,1fr))}.price-examples figure:first-child{grid-column:1/-1}
+
+/* Shared consultation entry on every page. */
+.chat-launcher {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 40;
+  min-height: 48px;
+  border-radius: 999px;
+  box-shadow: 0 4px 18px #192e3a30;
+}
+.chat-launcher[hidden] { display: none; }
+.footer { padding-bottom: 100px; }
+@media (max-width: 600px) {
+  .chat-launcher {
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    padding: 12px 18px;
+    font-size: 14px;
+  }
+}
