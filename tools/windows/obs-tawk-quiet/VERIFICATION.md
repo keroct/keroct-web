@@ -18,7 +18,7 @@ Graft CLIは環境に存在せず、MCPの索引はこのcheckoutを指してい
 - タスクの説明をテストで変更し、ownership不一致でUninstallが拒否されることを確認。テスト後に同じ所有taskの設定を復元。
 - 未知ファイルを配置してUninstallし、そのファイルが保持されることを確認。その後テスト自身のファイルを削除。所有task、process、配置ファイル・ディレクトリの残留なしを確認。
 
-最終Windows統合実行はexit 0（約24秒）。1秒pollの監視CPU時間は5.009秒中234.375ms。この16論理CPU環境では全体の約0.29%相当（単一CPU換算では約4.7%）。機器数・プロセス数・PCにより変動する。同じ条件の実測は約172〜234ms/5秒だった。busy loopを使用せず、対象process不在時はaudio列挙を省略する。
+初回Windows統合実行はexit 0（約24秒）。1秒pollの監視CPU時間は5.009秒中234.375ms。この16論理CPU環境では全体の約0.29%相当（単一CPU換算では約4.7%）。機器数・プロセス数・PCにより変動する。同じ条件の実測は約172〜234ms/5秒だった。busy loopを使用せず、対象process不在時はaudio列挙を省略する。
 
 既存Webの回帰検証では3ページのlocal links/fragments、ID重複、H1、6画像の原本hashを確認。`scripts/render-pricing.py` 再生成後の既存Webファイル差分はゼロ。`git diff --check` 成功。
 
@@ -31,3 +31,11 @@ Task Scheduler登録・実行・削除は実OSで検証したが、ログオフ/
 このCodex実行環境のAppData配置は、Task Scheduler側から見つからない状態（0x80070002）になった。失敗したテスト配置とtaskもUninstallで削除した。成功した実機テストはユーザーworkspace内の専用配置を使った。通常の利用者向け既定配置は `%LOCALAPPDATA%\KEROCT\ObsTawkQuiet` のまま。本番利用者の通常Windows環境での既定配置・ログイン時起動は最終確認項目。
 
 ポーリング直後に作られたセッションの最初の音、音源がシステム通知/共有ブラウザにある場合、権限や別Windowsログインセッション、曖昧なsession再生成、utility強制終了をまたぐユーザー意図は完全には保証できない。READMEに動作・制限・確認手順を記載した。
+
+## Install rollbackの回帰検証（2026-10-07）
+
+Installは新規root・書込み予定の既知ファイル・登録試行・起動試行を追跡する。成功前の失敗では所有taskをXMLで確認し、起動試行済みなら通常Uninstallと共通の協調停止・journal確認を経て削除する。既存root、foreign task、未知ファイルへの保護を維持する。
+
+実Windowsで登録失敗、Start-ScheduledTask失敗、実際に監視を起動したうえでheartbeatを10秒間観測できない状況を注入した。各ケースで所有task・process・配置先の残留なしと、同じパスへの再Install成功・Uninstall成功を確認した。登録失敗時に追加した未知ファイルも保持され、テスト自身がそのファイルを除去した後に再Installできた。
+
+WindowsIntegration.ps1はexit 0（54.422秒、ログ guild-validation-h9nwzc53.log）。既存native Audio Session・Scheduled Task・foreign task拒否・未知ファイル保持も同時に成功。Test.ps1の24 assertionとビルド、Web3ページの回帰、料金再生成後のWeb差分ゼロを再確認した。これらは実装環境での実行記録であり、GitHub Actions CIや外部レビュー者による独立実行の証拠ではない。

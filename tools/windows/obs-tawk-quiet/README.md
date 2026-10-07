@@ -76,3 +76,7 @@ Testはコンパイルと状態遷移テスト、windowless EXEのPE subsystem�
 実際のtawk.to DesktopとOBSによる最終確認は、StatusとWindows音量ミキサーを併用して、通常状態→OBS起動→tawk.toだけmute→OBS終了→元状態、元mute維持、再起動、ログイン時自動起動、Uninstall後の残留なしを確認してください。
 
 API仕様： [SetMute](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-isimpleaudiovolume-setmute)、[GetProcessId](https://learn.microsoft.com/en-us/windows/win32/api/audiopolicy/nf-audiopolicy-iaudiosessioncontrol2-getprocessid)、[GetSessionInstanceIdentifier](https://learn.microsoft.com/en-us/windows/win32/api/audiopolicy/nf-audiopolicy-iaudiosessioncontrol2-getsessioninstanceidentifier)。
+
+## Install失敗時
+
+新規配置・タスク登録・起動・heartbeat確認の途中で失敗した場合、そのInstallが作成した既知ファイルと所有タスクをrollbackします。監視を開始した場合は協調停止とミュート復元を確認してから削除し、空の配置先も削除します。原因を解消して同じInstallを再実行できます。未知ファイルは保持します。所有権不一致、復元未完了、監視が終了しない場合は安全な削除ができないため復旧用ファイルを保持し、エラーに理由を表示します。Statusで確認してください。

@@ -56,3 +56,5 @@ try {
         & (Join-Path $PSScriptRoot 'Manage.ps1') -Action Uninstall -InstallRoot $installRoot
     }
 }
+
+& (Join-Path $PSScriptRoot 'tests\InstallRollbackTests.ps1') -FixturePath "$OutputDirectory\tawk.to.exe" -OutputDirectory $OutputDirectory
