@@ -788,3 +788,16 @@ dialog::backdrop {
     font-size: 14px;
   }
 }
+
+/* Square illustration assets retain their full composition. */
+.work-square .work-image img { aspect-ratio:1; }
+.creator-feature + .creator-feature { margin-top:64px; }
+
+/* Stack portfolio cards at their natural image heights. */
+.works-grid { display:block; columns:2; column-gap:32px; }
+.works-grid .work { width:100%; break-inside:avoid; margin-bottom:48px; }
+.works-grid .work-image img { aspect-ratio:auto; height:auto; }
+@media (max-width:700px) {
+  .works-grid { columns:1; }
+  .works-grid .work { margin-bottom:32px; }
+}
