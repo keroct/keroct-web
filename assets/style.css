@@ -788,3 +788,7 @@ dialog::backdrop {
     font-size: 14px;
   }
 }
+
+/* Square illustration assets retain their full composition. */
+.work-square .work-image img { aspect-ratio:1; }
+.creator-feature + .creator-feature { margin-top:64px; }
