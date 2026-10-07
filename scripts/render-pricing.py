@@ -25,6 +25,7 @@ home=(root/'index.html').read_text(encoding='utf-8')
 header=home[:home.index('<main')]
 footer=home[home.index('<footer'):]
 header=header.replace('KEROCT造船所 | 作品と、つくる人に出会う場所。','制作メニュー・料金 | KEROCT造船所').replace('href="assets/','href="../assets/').replace('href="index.html','href="../index.html').replace('href="pricing/','href="../pricing/')
+header=header.replace('property="og:url" content="https://keroct.github.io/keroct-web/"','property="og:url" content="https://keroct.github.io/keroct-web/pricing/"').replace('rel="canonical" href="https://keroct.github.io/keroct-web/"','rel="canonical" href="https://keroct.github.io/keroct-web/pricing/"')
 footer=footer.replace('href="index.html','href="../index.html').replace('src="assets/','src="../assets/')
 intro='''<main id="main"><section class="pricing-intro wrap"><a class="back-link" href="../index.html#services">← トップへ戻る</a><h1>制作メニュー・料金</h1><p>つくりたいものに合わせて、プランをお選びください。<br>詳しいご要望や制作条件は、ご相談時に確認します。</p><nav class="pricing-nav" aria-label="料金ページの目次"><a href="#design">デザイン</a><a href="#sets">セット料金</a><a href="#illustration">イラスト</a><a href="#options">オプション</a><a href="#conditions">制作条件</a></nav></section>'''
 body='<section id="design" class="section wrap"><div class="section-heading"><h2>デザイン</h2><p>ロゴから配信画面まで、活動に必要なデザインを。</p></div><div class="pricing-grid">'+groups(data['design'])+'</div></section>'
