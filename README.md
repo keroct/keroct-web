@@ -5,6 +5,7 @@
 ## ページ
 
 - `index.html`: 制作例、クリエイター紹介、制作メニュー、依頼の流れ
+- `pricing/index.html`: デザイン・イラスト・セット・オプションと制作条件
 - `creators/kaerunoankake/index.html`: かえるのあんかけの制作例とXへのリンク
 - `docs/keroct-web-concept-revised-2026-10-06.md`: 提供された構想書の原文
 
@@ -28,7 +29,7 @@ python -m http.server 8765 --bind 127.0.0.1 --directory .
 
 ## 共有するUI
 
-両ページは`assets/style.css`と`assets/site.js`を利用します。配色はCSSの役割別変数で管理し、システムの配色設定を初期値として、メニュー内の「配色」から切り替えられます。選択はブラウザに保存されます。画像の拡大と相談窓口には標準の`dialog`を使い、Escapeでも閉じられます。
+各ページは`assets/style.css`と`assets/site.js`を利用します。配色はCSSの役割別変数で管理し、システムの配色設定を初期値として、メニュー内の「配色」から切り替えられます。選択はブラウザに保存されます。画像の拡大と相談窓口には標準の`dialog`を使い、Escapeでも閉じられます。
 
 ## チャットを接続する
 
@@ -38,9 +39,19 @@ KEROCTのPropertyとWidgetを用意したら、`assets/site-config.js`に正式�
 
 ## 公開前に整える内容
 
-- 正式な料金、納期、修正条件
+- ロゴプランCの内訳（提供本文と料金表画像の差分）
 - 本人のプロフィール文・本人コメント、他クリエイターの素材
 - tawk.toのProperty・Widget、スタッフ、受付運用
 - 掲載作品とSNSリンクの最終確認
 
 現在のGitHub Pagesの公開元は`main`のルートです。この初版は開発ブランチで確認し、採用後に`main`へ統合すると公開されます。
+
+## 料金の更新
+
+`data/pricing.json`が料金と制作条件の正本です。変更後はRepositoryルートで次を実行すると、専用ページとトップの導線を更新できます。
+
+```powershell
+python scripts/render-pricing.py
+```
+
+提供された2026年10月1日・2日の案内を転記しています。ミニ色紙はユーザー確認により画像の¥20,000を採用しました。スケジュール表の重複は一つにまとめています。税区分の記載は提供資料にありません。

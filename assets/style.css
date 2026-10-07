@@ -732,3 +732,34 @@ dialog::backdrop {
     max-height:60dvh
   }
 }
+
+/* Pricing is grouped by production type; original images remain in the gallery. */
+.pricing-intro {padding-top:44px}
+.pricing-intro h1 {font-size:clamp(30px,4vw,52px);margin:32px 0 20px}
+.pricing-intro>p {color:var(--muted);font-size:14px}
+.pricing-nav {display:flex;gap:24px;flex-wrap:wrap;margin-top:32px;font-size:14px;font-weight:700}
+.pricing-nav a {text-decoration:underline;text-underline-offset:7px}
+.pricing-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:40px 48px}
+.price-group {padding-top:24px;border-top:2px solid var(--accent)}
+.price-group h3 {font-size:24px;margin-bottom:24px}
+.price-group dl {margin:0}
+.price-item {display:grid;grid-template-columns:1fr auto;gap:8px 16px;margin-bottom:24px}
+.price-item dt {font-size:14px;align-self:center}
+.price-value {font-weight:700;font-size:23px;margin:0;white-space:nowrap}
+.price-detail {font-size:12px;color:var(--muted);line-height:1.8;grid-column:1/-1;margin:0}
+.sets-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px}
+.set-plan {border-top:2px solid var(--accent);padding-top:24px}
+.set-plan h3 {font-size:24px;margin-bottom:12px}
+.set-price {font-size:32px;font-weight:700;margin-bottom:24px}
+.set-plan ul {padding-left:20px;font-size:14px;line-height:2.2;color:var(--muted)}
+.set-revisions {font-size:13px;font-weight:700}
+.options-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px 48px}
+.option {border-top:1px solid var(--line);padding-top:24px}
+.option h3 {font-size:18px}
+.option-price {font-size:25px;font-weight:700;margin-bottom:12px}
+.option p:not(.option-price) {font-size:13px;color:var(--muted)}
+.conditions {padding-left:24px;max-width:80ch;font-size:14px;line-height:2}
+.conditions li+li {margin-top:18px}
+.service-list .service-price {font-size:24px;font-weight:700;color:var(--text)}
+@media(max-width:1100px) and (min-width:768px) {.site-header nav {gap:10px}.site-header {gap:16px}.brand strong {font-size:25px}}
+@media(max-width:767px) {.pricing-intro {padding-top:28px}.pricing-intro h1 {font-size:30px}.pricing-grid,.sets-grid,.options-grid {grid-template-columns:1fr;gap:32px}.pricing-nav {gap:20px;font-size:13px}.price-group h3 {font-size:22px}.price-value {font-size:21px}.service-list .service-price {font-size:22px}.sets-grid {gap:44px}}
