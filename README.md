@@ -44,7 +44,7 @@ KEROCTのPropertyとWidgetを用意したら、`assets/site-config.js`に正式�
 - tawk.toのProperty・Widget、スタッフ、受付運用
 - 掲載作品とSNSリンクの最終確認
 
-現在のGitHub Pagesの公開元は`main`のルートです。この初版は開発ブランチで確認し、採用後に`main`へ統合すると公開されます。
+GitHub Pagesの公開は、`main`への統合と分離した手動操作で行います。リポジトリのSettings → Pages → Sourceを`GitHub Actions`へ切り替える前に、`github-pages` Environmentの保護ルールを確認してください。切替後、`main`へ統合済みの公開対象をActionsの`Publish GitHub Pages`から`Run workflow`で実行してください。workflowはmainからの手動起動だけを対象にし、main以外からの起動はskipします。起動時のcommit SHAを固定し、既存と同じJekyll build経路で静的サイトを生成して公開します。mainへの統合だけでは公開されません。PagesのSource切替はリポジトリ設定の変更であり、このworkflowは実行しません。
 
 ## 料金の更新
 
