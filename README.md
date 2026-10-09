@@ -46,6 +46,8 @@ KEROCTのPropertyとWidgetを用意したら、`assets/site-config.js`に正式�
 
 GitHub Pagesの公開は、`main`への統合と分離した手動操作で行います。リポジトリのSettings → Pages → Sourceを`GitHub Actions`へ切り替える前に、`github-pages` Environmentの保護ルールを確認してください。切替後、`main`へ統合済みの公開対象をActionsの`Publish GitHub Pages`から`Run workflow`で実行してください。workflowはmainからの手動起動だけを対象にし、main以外からの起動はskipします。起動時のcommit SHAを固定し、既存と同じJekyll build経路で静的サイトを生成して公開します。mainへの統合だけでは公開されません。PagesのSource切替はリポジトリ設定の変更であり、このworkflowは実行しません。
 
+PagesのartifactはJekyll生成後に選択します。サイト表示に必要な24ファイルと、公開を継続するWindows音声ガードの配布用19ファイル（生成された`index.html`と`VERIFICATION.html`を含む）を`_pages`へコピーして公開します。ルートREADME、料金データ、制作資料、生成スクリプトなどはGitHubのソース配布・保管に残り、Pages artifactには含めません。
+
 ## 料金の更新
 
 `data/pricing.json`が料金と制作条件の正本です。変更後はRepositoryルートで次を実行すると、専用ページとトップの導線を更新できます。
