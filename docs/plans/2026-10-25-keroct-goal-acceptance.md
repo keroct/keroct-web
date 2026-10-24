@@ -24,7 +24,11 @@
 
 | 参照先 | GitHub状態 | merge/close時刻（UTC） |
 |---|---|---|
-| 本責務の参照先 | 固定証拠と個別受入条件で継承 | — |
+| [Issue #11](https://github.com/keroct/keroct-web/issues/11) | OPEN | — |
+| [PR #10](https://github.com/keroct/keroct-web/pull/10) | MERGED | 2026-10-09T04:18:27Z |
+| [PR #12](https://github.com/keroct/keroct-web/pull/12) | MERGED | 2026-10-11T15:51:54Z |
+
+このmerge記録はF20の候補全体の独立受入・Pages公開の完了とは別。本人の公開保留を維持する。
 
 ## 元の条件・6工程・根拠
 
@@ -32,7 +36,7 @@
 
 | 元ID・終了 | 元入口・束 | 到達条件 | 旧記録の状態・証拠 | 残条件・依存 |
 |---|---|---|---|---|
-| F20 [ ] | `items/keroct/Pages公開対象の必要性整理.md` → K1 | 採用43pathの公開URL/配布archive/OGP資産と必要性根拠が成立 | PR12固定head e90fae8と現main f246c9b/tree08041afdの一致を照合。50sourceの配布ZIP全byte一致、selector6pass/1skip、実toolコンパイル/24policy、4HTML/113相対参照/JPEG1200x630/loopback MIMEを受入。[固定監査](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/README.md)。 | [43file ZIP/実生成・126参照/HTTP全43byte](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/pages-candidate-receipt.json)まで成立。実symlink skip/Linux/候補全体の独立受理/既知外部consumerと承認後の公開URL/byte/MIME受入が残る。本人Pages公開保留を維持。Gem調査の意図しない共有設定1fileは証拠保全し元の不存在へ復元済み。 |
+| F20 [ ] | `items/keroct/Pages公開対象の必要性整理.md` → K1 | 採用43pathの公開URL/配布archive/OGP資産と必要性根拠が成立 | PR12固定head e90fae8と現main f246c9b/tree08041afdの一致を照合。50sourceの配布ZIP全byte一致、selector6pass/1skip、実toolコンパイル/24policy、4HTML/113相対参照/JPEG1200x630/loopback MIMEを受入。[固定監査](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/README.md)。 | [43file ZIP/実生成・126参照/HTTP全43byte](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/pages-candidate-receipt.json)まで成立。候補全体の独立受理/既知外部consumerと承認後の公開URL/byte/MIME受入が残る。本人Pages公開保留を維持。Gem調査の意図しない共有設定1fileは証拠保全し元の不存在へ復元済み。 |
 
 | 元項目 | 成果物 | 自動検証 | 独立レビュー・main | 実機受入 | 本番 | その他 |
 |---|---|---|---|---|---|---|
@@ -53,8 +57,10 @@
 
 #### F20 KEROCT固定候補・source配布・実Jekyll生成記録
 
+2026-10-19のLinux selector 7pass/0fail/skip0で、旧Windows実symlink skipの残条件を解消し、自動検証工程を完了として受理済み。以下の6pass/1skipはその前の実行履歴として保持する。現在の残条件は候補全体の独立受入・外部consumer・本人保留解除後の公開と受入であり、同じsymlink検証を未完として再実施しない。
+
 [根拠/旧51→43の差/必要性](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/README.md)・[全hash/原ログreceipt](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/receipt.json)。main f246c9b/tree08041afdはPR12 head e90fae8とtree一致。全50sourceのZIPをGit canonical byteで生成・復元確認し、元feature/primaryを変更していない。43選定はsite24/tool19、うち40sourceが存在し、生成テーマCSS/ツールindex/VERIFICATION HTMLの3件は、追補の保存済み実Jekyll成功ログで生成を確認した。43選択fileの全byteが生成先と一致する。
 
 新たにselector6pass/1skip（実symlink権限）、source ZIPからBuild/Test24policyとGUI subsystem、4HTMLの113相対参照、JPEG1200x630、loopback5URLのbyte/200/MIMEを確認し終了。公開HTTPや実音声/Task Schedulerの受入ではない。既存のPR12 Windows Jekyll53→43成功報告と今回の原ログ未回収を区別する。初回はRuby3.3.12展開/100gem hash照合まで。その後の保存済みログではタスク内の分離compiler/追加2gemを含む102gemのinstall成功と実build exit0が成立。[追補](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/generation-record.json)へ分け、Linux/公開環境の実績へ継承しない。Gem dry-runのhookが作成した共有default gemrc1fileは、生成byte/作成時刻/排他的作成元を確認・保全し、元の不存在へ戻した。
 
-[43file Pages ZIPと現receipt](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/pages-candidate-receipt.json)を保存した。匿名fallbackのCSS参照不一致はタスク内のdotcom/SSL設定で生成し直し、6HTML/126ローカル参照/生成CSS接続・JS2構文・ZIP全byte・HTTP43件を受入。source50file ZIPと区別する。本人Pages公開保留を維持し、実symlink skip/Linux・候補全体の独立受理/外部consumer・承認後公開のbyte/MIME/SHA受入を残す。
+[43file Pages ZIPと現receipt](https://github.com/tept-creator/fridge/blob/main/docs/reviews/goal-f20-20261015/pages-candidate-receipt.json)を保存した。匿名fallbackのCSS参照不一致はタスク内のdotcom/SSL設定で生成し直し、6HTML/126ローカル参照/生成CSS接続・JS2構文・ZIP全byte・HTTP43件を受入。source50file ZIPと区別する。本人Pages公開保留を維持し、候補全体の独立受理/外部consumer・承認後公開のbyte/MIME/SHA受入を残す。
