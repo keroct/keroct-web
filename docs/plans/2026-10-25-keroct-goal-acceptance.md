@@ -1,6 +1,7 @@
 # keroct：元57事項の終了条件と残受入
 
 移管元: [fridge PR #10](https://github.com/tept-creator/fridge/pull/10)（元head `609fc7dc5c1b8646d4442814a87a55047129dcae`）。
+移管PR: [keroct/keroct-web #13](https://github.com/keroct/keroct-web/pull/13)。
 移管統括: [fridge #13の計画](https://github.com/tept-creator/fridge/blob/main/docs/plans/2026-10-24-fridge-13-update-contract.md)。
 
 ## 目的・正本・担当
@@ -23,7 +24,7 @@
 
 | 参照先 | GitHub状態 | merge/close時刻（UTC） |
 |---|---|---|
-| 本責務の参照先 | 下の固定証拠と個別受入条件で継承 | — |
+| 本責務の参照先 | 固定証拠と個別受入条件で継承 | — |
 
 ## 元の条件・6工程・根拠
 
