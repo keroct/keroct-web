@@ -1,0 +1,12 @@
+{
+  "name": "keroct-cms-site",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  }
+}
