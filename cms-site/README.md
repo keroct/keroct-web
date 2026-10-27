@@ -1,0 +1,37 @@
+# KEROCT CMS site Worker
+
+This site-specific Worker uses the existing KEROCT HTML, CSS and browser JavaScript as its static template artifact. On each HTML document request it reads one active schema version 2 publication and renders the KEROCT insertion slots. The template is still the fallback source used by the current GitHub Pages flow; this Worker does not change that flow.
+
+The public response is crawlable HTML and uses `cache-control: no-store`. A missing publication, incompatible schema, invalid site presentation, invalid media URL, or upstream error returns a generic 503 page. Static files are served from the ASSETS binding without a CMS request.
+
+## Local development
+
+Use Node 22 and pnpm 12.15.0. Build a fresh static artifact with the existing explicit Pages selector, then start the local Worker:
+
+```powershell
+python scripts/prepare-pages-artifact.py --source INPUT --destination _pages
+corepack pnpm@12.15.0 --dir cms-site install --ignore-scripts --frozen-lockfile
+corepack pnpm@12.15.0 --dir cms-site exec wrangler dev --local
+```
+
+Configure `CMS_ORIGIN`, `CMS_TEAM_ID`, `CMS_SITE_KEY`, and `CMS_SERVICE_BINDINGS` in the local Wrangler environment before connecting to a CMS. The checked-in config deliberately uses an invalid origin and an empty team ID so it cannot make a real request by default. The default site key is `keroct`.
+
+The read endpoint is `GET {CMS_ORIGIN}/api/content-publishing?teamId={CMS_TEAM_ID}`. The adapter accepts the active publication envelope documented by the immutable MyHaco P2 contract at [content-publishing-contract.md](https://github.com/tept-creator/myhaco/blob/05d542cd1e0985b646036408230dbe4f9206f790/docs/content-publishing-contract.md). No CMS content is copied into this repository.
+
+## Template mapping
+
+`index.html` uses the configured presentation's ordered `heroImages` and `featuredWorks`; the existing layout has two hero slots and six featured-work slots. Creator cards use the publication's ordered creators. Creator routes render the existing profile template for any published slug and list that creator's ordered works. `/pricing/` renders design groups, sets, illustration groups, options, examples and conditions from their ordered records. Set revision counts are rendered from each set record. When all sets share their included items and revision count, the existing factual intro is rendered; for differing set contents or counts the intro says, `各セットの内容と修正回数は、一覧をご確認ください。`
+
+The site presentation must match `CMS_SITE_KEY`. Creator summary, profile description, gallery intro, and avatar alt text use their optional v2 fields. A missing summary falls back to the profile description for older synthetic/legacy snapshots; a missing gallery intro is empty, and a missing avatar alt falls back to the creator title. The `kaerunoankake` profile retains its four-character first-line break while the name remains CMS-driven.
+
+Creator and pricing values are escaped as text and attributes. External creator links are emitted for HTTPS URLs. Media URLs are resolved against the configured CMS origin and accepted only for that origin's `/api/public-media/{team}/{snapshot}/{reference}` route, with team and snapshot identifiers checked against the current publication.
+
+`CMS_SERVICE_BINDINGS` is a JSON array of up to three explicit `{pricingId, groupId, planId, href, label?, subtitle?, fromPrice?}` mappings. The IDs resolve against one active snapshot, so a plan edit is reflected on both the home card and pricing page without a template rebuild. Only `pricing/#design` and `pricing/#illustration` are allowed for `href`. `label` and `subtitle` can preserve fixed brand copy; otherwise the adapter uses the pricing record title and plan detail. `fromPrice: true` appends `〜` only to a plain yen amount like `¥6,000`. Other display strings stay unchanged. Missing or deleted target IDs omit the numeric card; the all-menus link remains. Malformed binding JSON returns the generic 503 response.
+
+Page routes include `/`, `/index.html`, `/pricing/`, and `/creators/{published-slug}/`. Non-trailing-slash pricing and creator paths receive a 308 redirect. Unknown creator slugs return 404. Other paths pass to the static asset binding.
+
+Published media is snapshot-scoped. If a current HTML document references an older snapshot after a publish or rollback, the existing site script allows one guarded page reload per failed CMS media path within 30 seconds so the browser can fetch the current HTML. This does not provide publication-time cache invalidation or zero 404s during a publish transition.
+
+## Synthetic tests
+
+Run `corepack pnpm@12.15.0 --dir cms-site test`. Tests use synthetic publication JSON, synthetic media responses, synthetic HTML templates, and synthetic files for the existing 43-entry artifact allowlist. They do not load customer content or images.

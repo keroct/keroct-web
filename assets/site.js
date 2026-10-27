@@ -40,6 +40,17 @@ const lightbox = document.querySelector('#lightbox');
 document.querySelectorAll('[data-image]').forEach(button => button.addEventListener('click', () => {
   const image = lightbox.querySelector('img');
   image.src = button.dataset.image; image.alt = button.dataset.title;
+  if (button.hasAttribute('data-cms-media')) {
+    image.setAttribute('data-cms-media', '');
+    image.dataset.publicationRevision = button.dataset.publicationRevision || '';
+    delete image.dataset.recoveryChecked;
+    image.addEventListener('error', () => {
+      recoverCmsMedia(image);
+      image.alt = '画像を読み込めませんでした。'; image.classList.add('image-error');
+    });
+  } else {
+    image.removeAttribute('data-cms-media');
+  }
   lightbox.querySelector('p').textContent = button.dataset.title;
   lightbox.showModal();
 }));
@@ -89,6 +100,25 @@ document.querySelectorAll('[data-contact]').forEach(button => button.addEventLis
   try { await loadChat(); contactDialog.close(); window.Tawk_API.showWidget(); window.Tawk_API.maximize(); }
   catch { content.textContent = '相談窓口を読み込めませんでした。時間をおいて再度お試しください。'; }
 }));
-document.querySelectorAll('.work-image img').forEach(image => image.addEventListener('error', () => {
-  image.alt = '画像を読み込めませんでした。'; image.classList.add('image-error');
-}));
+function recoverCmsMedia(image) {
+  if (!image.hasAttribute('data-cms-media') || image.dataset.recoveryChecked) return;
+  image.dataset.recoveryChecked = 'true';
+  try {
+    const path = new URL(image.src, location.href).pathname;
+    const key = `keroct-cms-media-reload:${path}`;
+    const lastReload = Number(sessionStorage.getItem(key) || 0);
+    if (Date.now() - lastReload < 30000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+    location.reload();
+  } catch {}
+}
+document.querySelectorAll('.work-image img').forEach(image => {
+  image.addEventListener('error', () => {
+    recoverCmsMedia(image);
+    image.alt = '画像を読み込めませんでした。'; image.classList.add('image-error');
+  });
+});
+document.querySelectorAll('img[data-cms-media]').forEach(image => {
+  image.addEventListener('error', () => recoverCmsMedia(image));
+  if (image.complete && image.naturalWidth === 0) recoverCmsMedia(image);
+});
