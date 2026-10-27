@@ -105,7 +105,7 @@ function recoverCmsMedia(image) {
   image.dataset.recoveryChecked = 'true';
   try {
     const path = new URL(image.src, location.href).pathname;
-    const key = `keroct-cms-media-reload:${path}`;
+    const key = `keroct-cms-media-reload:${location.pathname}`;
     const lastReload = Number(sessionStorage.getItem(key) || 0);
     if (Date.now() - lastReload < 30000) return;
     sessionStorage.setItem(key, String(Date.now()));

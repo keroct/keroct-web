@@ -155,7 +155,7 @@ function pricingGroup(item, revision) {
     const examples = item.groups.length === 1 ? item.examples : [];
     return `<article class="price-group"><h3>${esc(group.title)}</h3><dl>${group.plans.map(plan => `<div class="price-item"><dt>${esc(plan.name)}</dt><dd class="price-value">${esc(plan.value)}</dd>${plan.detail ? `<dd class="price-detail">${esc(plan.detail)}</dd>` : ''}</div>`).join('')}</dl>${examples.length ? `<div class="price-examples" aria-label="制作例">${examples.map(example => `<figure><a href="${esc(example.imageUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(example.title)}を拡大表示">${image(example.imageUrl, example.alt, revision, 'loading="lazy"')}</a><figcaption>${esc(example.title)}${example.dimensions ? ` / ${esc(example.dimensions)}` : ''}</figcaption></figure>`).join('')}</div>` : ''}</article>`;
   }).join('');
-  return groups || `<article class="price-group"><h3>${esc(item.title)}</h3></article>`;
+  return groups;
 }
 function setCard(item) {
   return item.sets.map(set => `<article class="set-plan"><h3>${esc(set.name)}</h3><p class="set-price">${esc(set.price)}</p><ul>${set.items.map(name => `<li>${esc(name)}</li>`).join('')}</ul>${set.revisions === null ? '' : `<p class="set-revisions">修正${esc(set.revisions)}回まで</p>`}</article>`).join('');

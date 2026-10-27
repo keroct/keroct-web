@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cmsSite = path.resolve(here, '..');
@@ -229,4 +230,153 @@ test('the Pages selector copies exactly the 24 site and 19 tool files from synth
     assert.equal(copied.length, 43);
     assert.equal(copied.includes('cms-site/src/index.js'), false);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
+});
+
+test('the actual tracked KEROCT templates keep published pricing in its matching section', async t => {
+  const scratchRoot = path.join(cmsSite, '.wrangler');
+  mkdirSync(scratchRoot, { recursive: true });
+  const scratch = mkdtempSync(path.join(scratchRoot, 'actual-template-assets-'));
+  const assets = path.join(scratch, 'assets');
+  for (const relative of [
+    'index.html',
+    'pricing/index.html',
+    'creators/kaerunoankake/index.html',
+    'creators/sensuishi13/index.html',
+  ]) {
+    const destination = path.join(assets, relative);
+    mkdirSync(path.dirname(destination), { recursive: true });
+    copyFileSync(path.join(repo, relative), destination);
+  }
+  const workerConfig = path.join(scratchRoot, 'actual-template-test-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.toml');
+  const assetsDirectory = path.relative(scratchRoot, assets).replaceAll(path.sep, '/');
+  writeFileSync(workerConfig, [
+    'name = "keroct-actual-template-test"',
+    'main = "../src/index.js"',
+    'compatibility_date = "2026-10-26"',
+    'workers_dev = true',
+    '',
+    '[assets]',
+    'directory = ' + JSON.stringify(assetsDirectory),
+    'binding = "ASSETS"',
+    'run_worker_first = true',
+    'html_handling = "auto-trailing-slash"',
+    '',
+    '[vars]',
+    'CMS_SITE_KEY = "keroct"',
+    '',
+  ].join('\n'));
+  const state = { current: publication('actual-templates', 1, 'Tracked') };
+  const cms = createServer((request, response) => {
+    const url = new URL(request.url, 'http://localhost');
+    if (url.pathname !== '/api/content-publishing') { response.writeHead(404).end(); return; }
+    if (url.searchParams.get('teamId') !== 'team-1') { response.writeHead(400).end(); return; }
+    response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(state.current));
+  });
+  cms.listen(0, '127.0.0.1');
+  await once(cms, 'listening');
+  const workerPort = await freePort();
+  const worker = spawn(process.execPath, [
+    path.join(cmsSite, 'node_modules', 'wrangler', 'bin', 'wrangler.js'),
+    'dev', '--config', workerConfig, '--local', '--ip', '127.0.0.1', '--port', String(workerPort),
+    '--var', 'CMS_ORIGIN:http://127.0.0.1:' + cms.address().port,
+    '--var', 'CMS_TEAM_ID:team-1',
+  ], { cwd: cmsSite, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  worker.output = '';
+  worker.stdout.on('data', chunk => { worker.output += chunk.toString(); });
+  worker.stderr.on('data', chunk => { worker.output += chunk.toString(); });
+  worker.on('error', error => { worker.output += String(error); });
+  t.after(async () => {
+    if (worker.pid != null && worker.exitCode === null) {
+      worker.kill();
+      await new Promise(resolve => worker.once('exit', resolve));
+    }
+    await new Promise(resolve => cms.close(resolve));
+    rmSync(scratch, { recursive: true, force: true });
+    rmSync(workerConfig, { force: true });
+  });
+  const workerURL = await waitForWorker('http://127.0.0.1:' + workerPort + '/', worker);
+  for (const route of ['/', '/pricing/', '/creators/kaerunoankake/', '/creators/sensuishi13/']) {
+    const response = await fetch(workerURL + route);
+    assert.equal(response.status, 200, route + ': ' + worker.output);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const html = await response.text();
+    if (route === '/') {
+      assert.match(html, /Home summary Tracked/);
+      assert.match(html, /Work Tracked/);
+    }
+    if (route === '/creators/kaerunoankake/') {
+      assert.match(html, /<h1>かえるの<br>あんかけ<\/h1>/);
+      assert.match(html, /Gallery intro B/);
+    }
+    if (route === '/creators/sensuishi13/') {
+      assert.match(html, /Synthetic diver emblem/);
+    }
+    if (route !== '/pricing/') continue;
+    const section = id => {
+      const start = html.indexOf('<section id="' + id + '"');
+      assert.notEqual(start, -1, 'tracked pricing template is missing section ' + id);
+      const endTag = html.indexOf('</section>', start);
+      assert.notEqual(endTag, -1, 'tracked pricing section is not closed: ' + id);
+      return html.slice(start, endTag + '</section>'.length);
+    };
+    const priceTitles = content => [...content.matchAll(/<article class="price-group"><h3>([\s\S]*?)<\/h3>/g)].map(match => match[1]);
+    assert.deepEqual(priceTitles(section('design')), ['Logo']);
+    assert.deepEqual(priceTitles(section('illustration')), ['Art']);
+    assert.match(section('sets'), /A set/);
+    assert.match(section('sets'), /修正0回まで/);
+    assert.match(section('sets'), /修正2回まで/);
+    assert.match(section('sets'), /修正5回まで/);
+    assert.doesNotMatch(section('sets'), /Stale set|修正3回まで/);
+    assert.match(section('options'), /Rush/);
+    assert.doesNotMatch(section('options'), /Stale option/);
+    assert.match(section('conditions'), /Design condition/);
+    assert.match(section('conditions'), /Illustration condition/);
+    assert.doesNotMatch(section('conditions'), /Stale condition/);
+    assert.doesNotMatch(html, /Stale price|Stale set|Stale option|Stale condition/);
+  }
+});
+
+test('failed CMS images on one page cause at most one guarded reload per 30 seconds', () => {
+  const images = ['failed-a', 'failed-b'].map(name => ({
+    src: 'https://site.test/api/public-media/team-1/snapshot/' + name,
+    complete: true,
+    naturalWidth: 0,
+    dataset: {},
+    listeners: {},
+    alt: name,
+    classList: { add() {} },
+    hasAttribute(attribute) { return attribute === 'data-cms-media'; },
+    addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); },
+  }));
+  let reloads = 0;
+  const storage = new Map();
+  const document = {
+    body: { appendChild() {} },
+    addEventListener() {},
+    querySelector() { return null; },
+    querySelectorAll(selector) {
+      if (selector === '.work-image img' || selector === 'img[data-cms-media]') return images;
+      return [];
+    },
+    createElement() { return { dataset: {}, addEventListener() {} }; },
+  };
+  const sessionStorage = {
+    getItem(key) { return storage.get(key) ?? null; },
+    setItem(key, value) { storage.set(key, value); },
+  };
+  runInNewContext(readFileSync(path.join(repo, 'assets/site.js'), 'utf8'), {
+    document,
+    window: { KEROCT_CONFIG: {} },
+    localStorage: { getItem() { return null; } },
+    sessionStorage,
+    location: { pathname: '/pricing/', href: 'https://site.test/pricing/', reload() { reloads++; } },
+    URL,
+  });
+  assert.equal(reloads, 1, 'two distinct image paths must share the per-page reload guard');
+  for (const image of images) {
+    for (const listener of image.listeners.error) listener();
+    assert.equal(image.alt, '画像を読み込めませんでした。');
+  }
+  assert.equal(reloads, 1, 'subsequent errors remain guarded');
+  assert.deepEqual([...storage.keys()], ['keroct-cms-media-reload:/pricing/']);
 });
