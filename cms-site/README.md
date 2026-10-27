@@ -16,7 +16,7 @@ corepack pnpm@12.15.0 --dir cms-site exec wrangler dev --local
 
 Configure `CMS_ORIGIN`, `CMS_TEAM_ID`, `CMS_SITE_KEY`, and `CMS_SERVICE_BINDINGS` in the local Wrangler environment before connecting to a CMS. The checked-in config deliberately uses an invalid origin and an empty team ID so it cannot make a real request by default. The default site key is `keroct`.
 
-The read endpoint is `GET {CMS_ORIGIN}/api/content-publishing?teamId={CMS_TEAM_ID}`. The adapter accepts the active publication envelope documented by the immutable MyHaco P2 contract at [content-publishing-contract.md](https://github.com/tept-creator/myhaco/blob/05d542cd1e0985b646036408230dbe4f9206f790/docs/content-publishing-contract.md). No CMS content is copied into this repository.
+The read endpoint is `GET {CMS_ORIGIN}/api/content-publishing?teamId={CMS_TEAM_ID}`. The adapter accepts the active publication envelope documented by the immutable MyHaco P2 contract at [content-publishing-contract.md](https://github.com/tept-creator/myhaco/blob/462e2a60e820700132500a56d3b6b102152353da/docs/content-publishing-contract.md). No CMS content is copied into this repository.
 
 ## Template mapping
 

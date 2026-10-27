@@ -121,6 +121,15 @@ test('the Worker renders synthetic active publications and fails closed', async 
   assert.match(html, new RegExp(`${cmsURL}/api/public-media/team-1/snapshot-a/hero`));
   assert.match(html, /Creator A &lt;&amp;&quot;/);
   assert.match(html, /Home summary A/);
+  const creatorCard = html.match(/<a class="creator-feature"[^>]*>[\s\S]*?<\/a>/)?.[0];
+  assert.ok(creatorCard);
+  let anchorDepth = 0;
+  for (const match of creatorCard.matchAll(/<\/?a\b[^>]*>/g)) {
+    if (match[0].startsWith('</')) anchorDepth--;
+    else { assert.equal(anchorDepth, 0, 'creator-card anchors must not nest'); anchorDepth++; }
+  }
+  assert.equal(anchorDepth, 0);
+  assert.doesNotMatch(creatorCard, /x\.com/, 'X link remains on profile pages');
   assert.match(html, /Home summary B/);
   assert.match(html, /Explicit avatar alt A/);
   assert.match(html, /data-category="logo"/);
@@ -266,7 +275,10 @@ test('the actual tracked KEROCT templates keep published pricing in its matching
     '',
   ].join('\n'));
   const state = { current: publication('actual-templates', 1, 'Tracked') };
-  const cms = createServer((request, response) => {
+  state.current.snapshot.pricing[0].groups.push({ id: 'group-secondary', title: 'Secondary', plans: [{ id: 'plan-secondary', name: 'Secondary plan', value: '¥12,500', detail: 'Secondary detail' }] });
+  state.current.snapshot.pricing[0].examples[0].title = 'Example <zero> &';
+  state.current.snapshot.pricing[3].examples = [{ title: 'Zero-group example', alt: 'Synthetic zero-group image', image: 'zero-example', imageUrl: '/api/public-media/team-1/actual-templates/zero-example', creator: 'creator-1', dimensions: '400 x 300' }];
+ const cms = createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
     if (url.pathname !== '/api/content-publishing') { response.writeHead(404).end(); return; }
     if (url.searchParams.get('teamId') !== 'team-1') { response.writeHead(400).end(); return; }
@@ -320,7 +332,13 @@ test('the actual tracked KEROCT templates keep published pricing in its matching
       return html.slice(start, endTag + '</section>'.length);
     };
     const priceTitles = content => [...content.matchAll(/<article class="price-group"><h3>([\s\S]*?)<\/h3>/g)].map(match => match[1]);
-    assert.deepEqual(priceTitles(section('design')), ['Logo']);
+    assert.deepEqual(priceTitles(section('design')), ['Logo', 'Secondary', 'Design pricesの制作例', 'Optionsの制作例']);
+    const design = section('design');
+    assert.match(design, /Example &lt;zero&gt; &amp;/);
+    assert.match(design, /Zero-group example/);
+    assert.match(design, /Creator Tracked &lt;&amp;&quot;/);
+    assert.equal((design.match(/<figure>/g) || []).length, 2, 'one design example and one zero-group example render once each');
+    assert.ok(design.includes('href="http://127.0.0.1:' + cms.address().port + '/api/public-media/team-1/actual-templates/example"'));
     assert.deepEqual(priceTitles(section('illustration')), ['Art']);
     assert.match(section('sets'), /A set/);
     assert.match(section('sets'), /修正0回まで/);

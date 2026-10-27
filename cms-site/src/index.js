@@ -146,16 +146,27 @@ function workCard(work, creator, revision, square = false) {
   return `<article class="work${square ? ' work-square' : ''}" data-category="${esc(category)}"><button class="work-image" data-image="${esc(zoomUrl)}" data-title="${esc(title)}" data-cms-media data-publication-revision="${revision}" aria-label="${esc(title)}を拡大"><img src="${esc(work.imageUrl)}" alt="${esc(work.alt)}" data-cms-media data-publication-revision="${revision}" loading="lazy"></button><div class="work-caption"><div><h3>${esc(work.title)}</h3><p>${esc(work.description)}</p></div><a href="/creators/${encodeURIComponent(creator.slug)}/">${esc(creator.title)}</a></div></article>`;
 }
 function creatorCard(creator, revision) {
-  const avatar = creator.avatarUrl ? `<div class="creator-visual">${image(creator.avatarUrl, creator.avatarAlt || creator.title, revision, 'loading="lazy"')}</div>` : '<div class="creator-visual"></div>';
-  const social = creator.xUrl && /^https:\/\//i.test(creator.xUrl) ? `<a class="text-link" href="${esc(creator.xUrl)}" target="_blank" rel="noopener noreferrer">X ↗</a>` : '';
-  return `<a class="creator-feature" href="/creators/${encodeURIComponent(creator.slug)}/">${avatar}<div class="creator-copy">${creator.role ? `<p class="creator-role">${esc(creator.role)}</p>` : ''}<h3>${esc(creator.title)}</h3><p>${esc(creator.summary)}</p>${social}<span class="text-link">作品・プロフィールを見る <span aria-hidden="true">↗</span></span></div></a>`;
+  const href = '/creators/' + encodeURIComponent(creator.slug) + '/';
+  const avatar = creator.avatarUrl ? '<div class="creator-visual">' + image(creator.avatarUrl, creator.avatarAlt || creator.title, revision, 'loading="lazy"') + '</div>' : '<div class="creator-visual"></div>';
+  return '<a class="creator-feature" href="' + esc(href) + '">' + avatar + '<div class="creator-copy">' + (creator.role ? '<p class="creator-role">' + esc(creator.role) + '</p>' : '') + '<h3>' + esc(creator.title) + '</h3><p>' + esc(creator.summary) + '</p><span class="text-link">作品・プロフィールを見る <span aria-hidden="true">↗</span></span></div></a>';
 }
-function pricingGroup(item, revision) {
+function pricingExamples(examples, revision, creatorsByID) {
+  if (!examples.length) return '';
+  return '<div class="price-examples" aria-label="制作例">' + examples.map(example => {
+    const creator = example.creator ? creatorsByID.get(example.creator) : null;
+    const credit = creator ? ' / ' + esc(creator.title) : '';
+    return '<figure><a href="' + esc(example.imageUrl) + '" target="_blank" rel="noopener noreferrer" aria-label="' + esc(example.title) + 'を拡大表示">' + image(example.imageUrl, example.alt, revision, 'loading="lazy"') + '</a><figcaption>' + esc(example.title) + credit + (example.dimensions ? ' / ' + esc(example.dimensions) : '') + '</figcaption></figure>';
+  }).join('') + '</div>';
+}
+function pricingGroup(item, revision, creatorsByID) {
   const groups = item.groups.map(group => {
-    const examples = item.groups.length === 1 ? item.examples : [];
-    return `<article class="price-group"><h3>${esc(group.title)}</h3><dl>${group.plans.map(plan => `<div class="price-item"><dt>${esc(plan.name)}</dt><dd class="price-value">${esc(plan.value)}</dd>${plan.detail ? `<dd class="price-detail">${esc(plan.detail)}</dd>` : ''}</div>`).join('')}</dl>${examples.length ? `<div class="price-examples" aria-label="制作例">${examples.map(example => `<figure><a href="${esc(example.imageUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(example.title)}を拡大表示">${image(example.imageUrl, example.alt, revision, 'loading="lazy"')}</a><figcaption>${esc(example.title)}${example.dimensions ? ` / ${esc(example.dimensions)}` : ''}</figcaption></figure>`).join('')}</div>` : ''}</article>`;
+    const examples = item.groups.length === 1 ? pricingExamples(item.examples, revision, creatorsByID) : '';
+    return '<article class="price-group"><h3>' + esc(group.title) + '</h3><dl>' + group.plans.map(plan =>
+      '<div class="price-item"><dt>' + esc(plan.name) + '</dt><dd class="price-value">' + esc(plan.value) + '</dd>' + (plan.detail ? '<dd class="price-detail">' + esc(plan.detail) + '</dd>' : '') + '</div>'
+    ).join('') + '</dl>' + examples + '</article>';
   }).join('');
-  return groups;
+  const separateExamples = item.groups.length === 1 || !item.examples.length ? '' : '<article class="price-group"><h3>' + esc(item.title) + 'の制作例</h3>' + pricingExamples(item.examples, revision, creatorsByID) + '</article>';
+  return groups + separateExamples;
 }
 function setCard(item) {
   return item.sets.map(set => `<article class="set-plan"><h3>${esc(set.name)}</h3><p class="set-price">${esc(set.price)}</p><ul>${set.items.map(name => `<li>${esc(name)}</li>`).join('')}</ul>${set.revisions === null ? '' : `<p class="set-revisions">修正${esc(set.revisions)}回まで</p>`}</article>`).join('');
@@ -223,8 +234,8 @@ function htmlForSlot(name, data, creatorSlug) {
     if (!creator) fail('requested creator does not exist');
     return works.filter(work => work.creator === creator.id).map(work => workCard(work, creator, revision, work.category === 'illustration')).join('');
   }
-  if (name === 'pricing-design') return pricing.filter(item => item.kind === 'design').flatMap(item => pricingGroup(item, revision)).join('');
-  if (name === 'pricing-illustration') return pricing.filter(item => item.kind === 'illustration').flatMap(item => pricingGroup(item, revision)).join('');
+  if (name === 'pricing-design') return pricing.filter(item => item.kind === 'design').flatMap(item => pricingGroup(item, revision, creatorsByID)).join('');
+  if (name === 'pricing-illustration') return pricing.filter(item => item.kind === 'illustration').flatMap(item => pricingGroup(item, revision, creatorsByID)).join('');
   if (name === 'pricing-sets') return pricing.filter(item => item.kind === 'sets').map(setCard).join('');
   if (name === 'pricing-options') return optionCards(pricing);
   if (name === 'pricing-conditions') return conditionItems(pricing);
