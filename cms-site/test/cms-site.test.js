@@ -241,6 +241,127 @@ test('the Pages selector copies exactly the 24 site and 19 tool files from synth
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 });
 
+test('the pricing generator preserves CMS markers and the Worker replaces its static fallback', async t => {
+  const scratchRoot = path.join(cmsSite, '.wrangler');
+  mkdirSync(scratchRoot, { recursive: true });
+  const scratch = mkdtempSync(path.join(scratchRoot, 'generated-pricing-'));
+  const scripts = path.join(scratch, 'scripts');
+  const dataDir = path.join(scratch, 'data');
+  const creatorsDir = path.join(scratch, 'creators', 'kaerunoankake');
+  mkdirSync(scripts, { recursive: true });
+  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(creatorsDir, { recursive: true });
+  copyFileSync(path.join(repo, 'scripts', 'render-pricing.py'), path.join(scripts, 'render-pricing.py'));
+  writeFileSync(path.join(dataDir, 'pricing.json'), JSON.stringify({
+    design: [{ name: 'Fallback design', plans: [{ name: 'Fallback design plan', price: '¥1', detail: 'Fallback detail' }] }],
+    illustration: [{ name: 'Fallback illustration', plans: [{ name: 'Fallback art plan', price: '¥2', detail: '' }] }],
+    sets: [{ name: 'Fallback set', price: '¥3', items: ['Fallback item'] }],
+    options: [{ name: 'Fallback option', price: '¥4', detail: '' }],
+    conditions: ['Fallback condition'],
+  }), 'utf8');
+  writeFileSync(path.join(scratch, 'index.html'), [
+    '<!doctype html><html><head><title>KEROCT fallback</title></head><body>',
+    '<nav><a href="index.html#services">制作メニュー</a></nav>',
+    '<main><section id="services"><div class="service-list"><a href="pricing/#design"><span class="service-name">Old static service</span><p class="service-price">¥5</p></a></div></section></main>',
+    '<footer><a href="index.html">Home</a></footer></body></html>',
+  ].join(''));
+  writeFileSync(path.join(creatorsDir, 'index.html'), '<!doctype html><html><body><nav><a href="../../index.html#services">制作メニュー</a></nav><main></main></body></html>');
+  const python = process.env.PYTHON || 'python';
+  const generated = spawnSync(python, [path.join(scripts, 'render-pricing.py')], { encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
+  assert.equal(generated.status, 0, generated.stderr);
+  const generatedHome = readFileSync(path.join(scratch, 'index.html'), 'utf8');
+  const generatedPricing = readFileSync(path.join(scratch, 'pricing', 'index.html'), 'utf8');
+  assert.match(generatedHome, /<span data-cms="service-cards"><\/span>/);
+  assert.match(generatedHome, /ロゴデザイン/);
+  assert.match(generatedHome, /¥6,000〜/);
+  assert.match(generatedPricing, /data-cms="pricing-design"/);
+  assert.match(generatedPricing, /data-cms="pricing-sets"/);
+  assert.match(generatedPricing, /data-cms="pricing-illustration"/);
+  assert.match(generatedPricing, /data-cms="pricing-options"/);
+  assert.match(generatedPricing, /data-cms="pricing-conditions"/);
+  assert.match(generatedPricing, /data-cms-sets-intro/);
+  assert.match(generatedPricing, /Fallback design plan/);
+
+  const state = { current: publication('generated-pricing', 1, 'Generated') };
+  state.current.snapshot.pricing[0].groups[0].plans[0].value = '¥7,111';
+  const cms = createServer((request, response) => {
+    const url = new URL(request.url, 'http://localhost');
+    if (url.pathname !== '/api/content-publishing' || url.searchParams.get('teamId') !== 'team-1') {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(state.current));
+  });
+  cms.listen(0, '127.0.0.1');
+  await once(cms, 'listening');
+  const workerPort = await freePort();
+  const assetDirectory = path.relative(scratchRoot, scratch).replaceAll(path.sep, '/');
+  const workerConfig = path.join(scratchRoot, 'generated-pricing-test-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.toml');
+  const bindings = [{ pricingId: 'price-design', groupId: 'group-1', planId: 'plan-1', href: 'pricing/#design', fromPrice: true }];
+  writeFileSync(workerConfig, [
+    'name = "keroct-generated-pricing-test"',
+    'main = "../src/index.js"',
+    'compatibility_date = "2026-10-26"',
+    'workers_dev = true',
+    '',
+    '[assets]',
+    'directory = "' + assetDirectory + '"',
+    'binding = "ASSETS"',
+    'run_worker_first = true',
+    'html_handling = "auto-trailing-slash"',
+    '',
+    '[vars]',
+    'CMS_SITE_KEY = "keroct"',
+    '',
+  ].join('\n'));
+  const worker = spawn(process.execPath, [
+    path.join(cmsSite, 'node_modules', 'wrangler', 'bin', 'wrangler.js'),
+    'dev', '--config', workerConfig, '--local', '--ip', '127.0.0.1', '--port', String(workerPort),
+    '--var', 'CMS_ORIGIN:http://127.0.0.1:' + cms.address().port,
+    '--var', 'CMS_TEAM_ID:team-1',
+    '--var', 'CMS_SERVICE_BINDINGS:' + JSON.stringify(bindings),
+    '--log-level', 'info',
+  ], { cwd: cmsSite, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  worker.output = '';
+  worker.stdout.on('data', chunk => { worker.output += chunk.toString(); });
+  worker.stderr.on('data', chunk => { worker.output += chunk.toString(); });
+  worker.on('error', error => { worker.output += String(error); });
+  t.after(async () => {
+    if (worker.pid != null && worker.exitCode === null) {
+      worker.kill();
+      await new Promise(resolve => worker.once('exit', resolve));
+    }
+    await new Promise(resolve => cms.close(resolve));
+    rmSync(scratch, { recursive: true, force: true });
+    rmSync(workerConfig, { force: true });
+  });
+  const workerURL = await waitForWorker('http://127.0.0.1:' + workerPort + '/', worker);
+  const homeResponse = await fetch(workerURL + '/');
+  assert.equal(homeResponse.status, 200, worker.output);
+  const home = await homeResponse.text();
+  assert.match(home, /class="service-price">¥7,111〜<\/p>/);
+  assert.match(home, /Design prices/);
+  assert.doesNotMatch(home, /ロゴデザイン|¥6,000/);
+  const pricingResponse = await fetch(workerURL + '/pricing/');
+  assert.equal(pricingResponse.status, 200, worker.output);
+  const pricing = await pricingResponse.text();
+  const section = id => {
+    const start = pricing.indexOf('<section id="' + id + '"');
+    assert.notEqual(start, -1, 'generated pricing template is missing section ' + id);
+    const end = pricing.indexOf('</section>', start);
+    assert.notEqual(end, -1, 'generated pricing section is not closed: ' + id);
+    return pricing.slice(start, end + '</section>'.length);
+  };
+  assert.match(section('design'), /Logo[\s\S]*¥7,111/);
+  assert.doesNotMatch(section('design'), /Fallback|Art/);
+  assert.match(section('illustration'), /Art/);
+  assert.doesNotMatch(section('illustration'), /Fallback|Logo/);
+  assert.match(section('sets'), /A set/);
+  assert.match(section('options'), /Rush/);
+  assert.match(section('conditions'), /Design condition/);
+  assert.match(pricing, /各セットの内容と修正回数は、一覧をご確認ください。/);
+  assert.doesNotMatch(pricing, /Fallback design|Fallback illustration|Fallback set|Fallback option|Fallback condition/);
+});
 test('the actual tracked KEROCT templates keep published pricing in its matching section', async t => {
   const scratchRoot = path.join(cmsSite, '.wrangler');
   mkdirSync(scratchRoot, { recursive: true });
