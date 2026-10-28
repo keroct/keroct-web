@@ -1,6 +1,7 @@
 import contract from '../contracts/keroct-v1.json' with { type: 'json' };
 import publicAssets from '../contracts/public-assets-v1.json' with { type: 'json' };
 const publicAssetPaths = new Set(publicAssets.assets.map(asset => asset.path));
+const publicAssetsByPath = new Map(publicAssets.assets.map(asset => [asset.path, asset]));
 const releasePathPattern = /^\/__releases\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/$/i;
 function validatedAssetBasePath(value) {
   if (value === undefined) return undefined;
@@ -15,13 +16,26 @@ function versionedAssetURL(value, baseURL, assetBasePath, allowHTML = false) {
   const pathname = resolved.pathname;
   if (/%[0-9a-f]{2}/i.test(pathname)) return null;
   const assetPath = pathname.replace(/^\//, '');
-  if (!publicAssetPaths.has(assetPath) || (!allowHTML && (assetPath === 'index.html' || assetPath.endsWith('/index.html')))) return null;
+  const asset = publicAssetsByPath.get(assetPath);
+  if (!publicAssetPaths.has(assetPath) || (!allowHTML && asset?.contentType === 'text/html')) return null;
   return `${assetBasePath}${assetPath}${resolved.search}${resolved.hash}`;
 }
 function rewriteAssetAttribute(element, attribute, baseURL, assetBasePath, allowHTML = false) {
   const value = element.getAttribute(attribute);
   const rewritten = versionedAssetURL(value, baseURL, assetBasePath, allowHTML);
   if (rewritten) element.setAttribute(attribute, rewritten);
+}
+function rewriteStaticAssetReferences(rewriter, baseURL, assetBasePath) {
+  return rewriter
+    .on('link[href]', { element(element) {
+      const rel = (element.getAttribute('rel') || '').toLowerCase().split(/\s+/);
+      if (rel.some(value => ['stylesheet', 'icon', 'apple-touch-icon', 'manifest', 'preload', 'modulepreload'].includes(value))) rewriteAssetAttribute(element, 'href', baseURL, assetBasePath);
+    } })
+    .on('script[src], img[src], source[src], video[poster], audio[src], track[src], input[src], iframe[src], object[data]', { element(element) {
+      for (const attribute of ['src', 'poster', 'data']) rewriteAssetAttribute(element, attribute, baseURL, assetBasePath);
+    } })
+    .on('a[href]', { element(element) { rewriteAssetAttribute(element, 'href', baseURL, assetBasePath); } })
+    .on('a[download][href]', { element(element) { rewriteAssetAttribute(element, 'href', baseURL, assetBasePath, true); } });
 }
 const genericFailure = `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ページを表示できません</title><body><main><h1>ページを表示できません</h1><p>公開内容を読み込めませんでした。時間をおいて再度お試しください。</p></main></body></html>`;
 const mediaPrefix = '/api/public-media/';
@@ -325,17 +339,12 @@ export async function renderDocument({ data, route, template, publicOrigin, asse
   const headers = new Headers(asset.headers);
   headers.set('cache-control', 'no-store');
   headers.set('content-type', 'text/html; charset=utf-8');
-  return new HTMLRewriter()
-    .on('html', { element(element) { if (staticMode) element.setAttribute('data-cms-static', 'true'); } })
-    .on('link[href]', { element(element) {
-      const rel = (element.getAttribute('rel') || '').toLowerCase().split(/\s+/);
-      if (rel.some(value => ['stylesheet', 'icon', 'apple-touch-icon', 'manifest', 'preload', 'modulepreload'].includes(value))) rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath);
-    } })
-    .on('script[src], img[src], source[src], video[poster], audio[src], track[src], input[src], iframe[src], object[data]', { element(element) {
-      for (const attribute of ['src', 'poster', 'data']) rewriteAssetAttribute(element, attribute, resourceBase, assetBasePath);
-    } })
-    .on('a[href]', { element(element) { rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath); } })
-    .on('a[download][href]', { element(element) { rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath, true); } })
+  const rewriter = rewriteStaticAssetReferences(
+    new HTMLRewriter().on('html', { element(element) { if (staticMode) element.setAttribute('data-cms-static', 'true'); } }),
+    resourceBase,
+    assetBasePath,
+  );
+  return rewriter
     .on('[data-cms]', { element(element) { element.replace(htmlForSlot(element.getAttribute('data-cms'), data, route.slug), { html: true }); } })
     .on('[data-cms-sets-intro]', { element(element) { element.setInnerContent(setsIntro(data.pricing)); } })
     .on('[data-cms-profile-heading]', { element(element) { element.setInnerContent(`${data.creatorsBySlug.get(route.slug).title}の制作例`); } })
@@ -366,6 +375,36 @@ const releaseRoutes = [
   ['creators/kaerunoankake/index.html', '/creators/kaerunoankake/'],
   ['creators/sensuishi13/index.html', '/creators/sensuishi13/'],
 ];
+const releaseDocumentPaths = new Set(releaseRoutes.map(([filename]) => filename));
+export const auxiliaryHTMLPaths = publicAssets.assets
+  .filter(asset => asset.contentType === 'text/html' && !releaseDocumentPaths.has(asset.path))
+  .map(asset => asset.path);
+const auxiliaryHTMLPathSet = new Set(auxiliaryHTMLPaths);
+export async function renderAuxiliaryDocument({ filename, template, publicOrigin, assetBasePath }) {
+  if (!auxiliaryHTMLPathSet.has(filename)) fail('auxiliary HTML path is not in the public asset manifest');
+  if (typeof template !== 'string' || !template.trim()) fail('auxiliary HTML template is empty');
+  let origin;
+  try { origin = new URL(publicOrigin); } catch { fail('publicOrigin must be a valid HTTP(S) origin'); }
+  if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== publicOrigin || origin.username || origin.password) fail('publicOrigin must be a valid HTTP(S) origin');
+  assetBasePath = validatedAssetBasePath(assetBasePath);
+  if (!assetBasePath) fail('assetBasePath is required for auxiliary HTML');
+  const pathname = filename.endsWith('/index.html') ? `/${filename.slice(0, -'index.html'.length)}` : `/${filename}`;
+  const canonical = new URL(pathname, origin.origin).href;
+  const resourceBase = new URL(canonical);
+  const socialImage = new URL(`${assetBasePath}assets/ogp.jpg`, origin.origin).href;
+  const headers = new Headers({ 'cache-control': 'no-store', 'content-type': 'text/html; charset=utf-8' });
+  const rewriter = rewriteStaticAssetReferences(
+    new HTMLRewriter().on('html', { element(element) { element.setAttribute('data-cms-static', 'true'); } }),
+    resourceBase,
+    assetBasePath,
+  );
+  return rewriter
+    .on('link[rel="canonical"]', { element(element) { element.setAttribute('href', canonical); } })
+    .on('meta[property="og:url"]', { element(element) { element.setAttribute('content', canonical); } })
+    .on('meta[name="twitter:url"]', { element(element) { element.setAttribute('content', canonical); } })
+    .on('meta[property="og:image"], meta[name="twitter:image"]', { element(element) { element.setAttribute('content', socialImage); } })
+    .transform(new Response(template, { headers }));
+}
 const requiredTemplateSlots = {
   home: ['home-hero', 'home-works', 'creators', 'service-cards'],
   pricing: ['pricing-design', 'pricing-sets', 'pricing-illustration', 'pricing-options', 'pricing-conditions'],

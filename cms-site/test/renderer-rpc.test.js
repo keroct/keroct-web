@@ -54,6 +54,31 @@ test('private renderer RPC uses two local Workers for versioned asset streaming 
   for (const name of ['index.html', 'pricing/index.html', 'creators/kaerunoankake/index.html', 'creators/sensuishi13/index.html']) {
     const dest = path.join(assets, ...name.split('/')); mkdirSync(path.dirname(dest), { recursive: true }); copyFileSync(path.join(repo, name), dest);
   }
+  const auxiliaryDirectory = 'tools/windows/obs-tawk-quiet';
+  const auxiliaryHome = path.join(assets, ...`${auxiliaryDirectory}/index.html`.split('/'));
+  const verificationPage = path.join(assets, ...`${auxiliaryDirectory}/VERIFICATION.html`.split('/'));
+  mkdirSync(path.dirname(auxiliaryHome), { recursive: true });
+  writeFileSync(auxiliaryHome, [
+    '<!doctype html><html><head><title>OBS helper</title>',
+    '<link rel="canonical" href="https://old.example/old">',
+    '<meta property="og:url" content="https://old.example/old">',
+    '<meta name="twitter:url" content="https://old.example/old">',
+    '<meta property="og:image" content="/assets/ogp.jpg">',
+    '<link rel="stylesheet" href="/assets/css/style.css?v=contract">',
+    '<script src="/assets/site.js"></script></head><body>',
+    '<main>Auxiliary package page preserved</main>',
+    '<a href="/tools/windows/obs-tawk-quiet/VERIFICATION.html">Verification page</a>',
+    '<a download href="/tools/windows/obs-tawk-quiet/VERIFICATION.html">Download verification page</a>',
+    '<a download href="/tools/windows/obs-tawk-quiet/Install.cmd">Install command</a>',
+    '<a href="https://external.example/help">External help</a>',
+    '</body></html>',
+  ].join(''));
+  writeFileSync(verificationPage, [
+    '<!doctype html><html><head><title>Verification details</title>',
+    '<link rel="stylesheet" href="../../../assets/css/style.css?v=relative">',
+    '</head><body><main>Verification body stays intact</main>',
+    '<a download href="Install.cmd">Download helper</a></body></html>',
+  ].join(''));
   writeFileSync(path.join(assets, 'assets/fonts/ZenKakuGothicNew-Black.ttf'), Buffer.alloc(1024 * 1024 + 37, 0x61));
   writeFileSync(clientFile, `import { DurableObject } from 'cloudflare:workers';
 export class RpcProxy extends DurableObject { async fetch(request) { const p=new URL(request.url).pathname; const b=p==='/rpc/asset'?await request.json():{}; try {
@@ -83,10 +108,30 @@ export default { async fetch(request,env) { if(new URL(request.url).pathname.sta
   const versionHeader = { 'x-renderer-version': listed.rendererVersion };
   response = await call('/rpc/render', request, versionHeader); const responseText = await response.text(); assert.equal(response.status, 200, `${responseText}\n${child.output}`);
   const rendered = JSON.parse(responseText); assert.equal(rendered.rendererVersion, listed.rendererVersion); assert.equal(rendered.codeRevision, sha);
-  assert.deepEqual(Object.keys(rendered.documents).sort(), ['creators/kaerunoankake/index.html', 'creators/sensuishi13/index.html', 'index.html', 'pricing/index.html'].sort());
+  const auxiliaryIndex = 'tools/windows/obs-tawk-quiet/index.html';
+  const verificationPath = 'tools/windows/obs-tawk-quiet/VERIFICATION.html';
+  assert.deepEqual(Object.keys(rendered.documents).sort(), ['creators/kaerunoankake/index.html', 'creators/sensuishi13/index.html', 'index.html', 'pricing/index.html', auxiliaryIndex, verificationPath].sort());
   assert.match(rendered.documents['index.html'], /Synthetic creator/); assert.match(rendered.documents['pricing/index.html'], /¥6,000/);
   assert.match(rendered.documents['index.html'], /data-cms-static="true"/);
   for (const html of Object.values(rendered.documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
+  const auxiliaryHTML = rendered.documents[auxiliaryIndex];
+  const verificationHTML = rendered.documents[verificationPath];
+  const releasePrefix = '/__releases/2cb8c2a1-fd03-4f22-b651-4bb00ec65466/';
+  assert.match(auxiliaryHTML, /Auxiliary package page preserved/);
+  assert.match(auxiliaryHTML, /data-cms-static="true"/);
+  assert.match(auxiliaryHTML, /href="https:\/\/site\.example\/tools\/windows\/obs-tawk-quiet\/"/);
+  assert.match(auxiliaryHTML, /property="og:url" content="https:\/\/site\.example\/tools\/windows\/obs-tawk-quiet\/"/);
+  assert.match(auxiliaryHTML, /name="twitter:url" content="https:\/\/site\.example\/tools\/windows\/obs-tawk-quiet\/"/);
+  assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}assets/css/style.css?v=contract"`));
+  assert.ok(auxiliaryHTML.includes(`src="${releasePrefix}assets/site.js"`));
+  assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/Install.cmd"`));
+  assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/VERIFICATION.html"`), 'HTML downloads may use the release-pinned path');
+  assert.ok(auxiliaryHTML.includes('href="/tools/windows/obs-tawk-quiet/VERIFICATION.html"'), 'ordinary HTML navigation stays on its active path');
+  assert.ok(auxiliaryHTML.includes('href="https://external.example/help"'), 'external navigation stays unchanged');
+  assert.ok(auxiliaryHTML.includes(`content="https://site.example${releasePrefix}assets/ogp.jpg"`));
+  assert.match(verificationHTML, /Verification body stays intact/);
+  assert.ok(verificationHTML.includes(`href="${releasePrefix}assets/css/style.css?v=relative"`));
+  assert.ok(verificationHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/Install.cmd"`));
   response = await call('/rpc/render', { ...request, options: { ...request.options, assetBasePath: '/__releases/../../' } }, versionHeader); assert.ok(response.status >= 400, 'unsafe release path rejected');
   response = await call('/rpc/render', { ...request, options: { ...request.options, teamID: 'team-2' } }, versionHeader); assert.ok(response.status >= 400);
   response = await call('/rpc/render', request, { 'x-renderer-version': 'keroct-renderer-v1:stale' }); assert.ok(response.status >= 400);

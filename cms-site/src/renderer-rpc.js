@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import publicAssets from '../contracts/public-assets-v1.json' with { type: 'json' };
-import { renderRelease } from './index.js';
+import { auxiliaryHTMLPaths, renderAuxiliaryDocument, renderRelease } from './index.js';
 
 const assetsByPath = new Map(publicAssets.assets.map(asset => [asset.path, asset]));
 const revisionPattern = /^[0-9a-f]{40}$/i;
@@ -108,6 +108,11 @@ export class KeroctRenderer extends WorkerEntrypoint {
         return mediaURLs[url];
       },
     });
+    for (const filename of auxiliaryHTMLPaths) {
+      const template = await (await this.getAsset(filename, rendererVersion)).text();
+      const rendered = await renderAuxiliaryDocument({ filename, template, publicOrigin, assetBasePath });
+      documents[filename] = await rendered.text();
+    }
     return jsonResponse({ schemaVersion: 1, rendererVersion, codeRevision, documents });
   }
 }
