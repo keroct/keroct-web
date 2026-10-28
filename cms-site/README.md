@@ -42,3 +42,11 @@ Published media is snapshot-scoped. If a current HTML document references an old
 ## Synthetic tests
 
 Run `corepack pnpm@12.15.0 --dir cms-site test`. Tests use synthetic publication JSON, synthetic media responses, synthetic HTML templates, and synthetic files for the existing 43-entry artifact allowlist. They do not load customer content or images.
+
+## Private renderer service
+
+The Worker keeps the existing public `fetch` handler and exposes the `KeroctRenderer` entrypoint for private Worker RPC. The renderer reports an opaque deployment version from Cloudflare version metadata and the code SHA injected through `RENDERER_CODE_SHA`. Each RPC call that reads an asset or renders a candidate must supply the version returned by `listAssets`; a mismatch is rejected before the asset read or render begins.
+
+`listAssets()` returns the version, code revision, and the explicit 43-path allowlist in `contracts/public-assets-v1.json`. `getAsset(path, expectedRendererVersion)` returns a streaming `Response` for one allowlisted relative path. `renderCandidate(input, expectedRendererVersion)` accepts a streamed JSON request with `schemaVersion: 1`, an envelope, and render options, then returns a JSON response containing the four rendered documents. The deployment's CMS team ID, origin, and site key are checked before rendering. Media URL mappings are supplied by the caller and must explicitly cover each referenced media URL.
+
+The manifest is selected from the same 43 runtime and tool paths used by `scripts/prepare-pages-artifact.py`. It contains content types for each path; the renderer does not accept arbitrary asset URLs or use an external fetch for assets.

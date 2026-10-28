@@ -1,5 +1,5 @@
 name = "keroct-cms-site"
-main = "src/index.js"
+main = "src/worker.js"
 compatibility_date = "2026-10-26"
 workers_dev = true
 
@@ -9,7 +9,11 @@ binding = "ASSETS"
 run_worker_first = true
 html_handling = "auto-trailing-slash"
 
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [vars]
 CMS_ORIGIN = "https://cms-origin-not-configured.invalid"
 CMS_TEAM_ID = ""
 CMS_SITE_KEY = "keroct"
+RENDERER_CODE_SHA = ""
