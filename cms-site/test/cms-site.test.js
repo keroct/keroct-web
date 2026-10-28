@@ -154,7 +154,7 @@ export default { async fetch(request, env) {
   const { envelope, missingMapping, unsupportedCreator, mappedPath, templateOverride, swappedCreatorTemplates, assetBasePath } = await request.json();
   if (unsupportedCreator) envelope.snapshot.creators.push({ ...envelope.snapshot.creators[0], id: 'extra-creator', slug: 'unsupported-creator', order: 9 });
     const documents = await renderRelease({ envelope, cmsOrigin: 'https://cms.example', teamID: 'team-1', publicOrigin: 'https://site.example',
-      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; if (swappedCreatorTemplates?.[assetPath]) return swappedCreatorTemplates[assetPath]; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); if (!response.ok) return null; let html = await response.text(); if (assetBasePath) html = html.replace('</head>', '<link rel="stylesheet" href="/assets/style.css"><link rel="preload" as="font" href="/assets/fonts/ZenKakuGothicNew-Black.ttf"><meta property="og:image" content="/assets/ogp.jpg"></head>').replace('</body>', '<a download href="/tools/windows/obs-tawk-quiet/README.md">Download</a></body>'); return html; },
+      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; if (swappedCreatorTemplates?.[assetPath]) return swappedCreatorTemplates[assetPath]; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); if (!response.ok) return null; let html = await response.text(); if (assetBasePath) html = html.replace('</head>', '<link rel="stylesheet" href="/assets/style.css"><link rel="preload" as="font" href="/assets/fonts/ZenKakuGothicNew-Black.ttf"><meta property="og:image" content="/assets/ogp.jpg"></head>').replace('</body>', '<a href="/tools/windows/obs-tawk-quiet/Install.cmd">Tool</a><a download href="/tools/windows/obs-tawk-quiet/README.md">Download</a></body>'); return html; },
       assetBasePath, mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : mappedPath ?? '/release-media/' + url.split('/').pop(); } });
     return Response.json(documents);
   } catch (error) { return Response.json({ error: error.message, templateLoads }, { status: 400 }); }
@@ -195,6 +195,7 @@ export default { async fetch(request, env) {
   assert.match(documents['creators/kaerunoankake/index.html'], /Gallery intro release/);
   assert.match(documents['creators/kaerunoankake/index.html'], /href="https:\/\/x\.com\/synthetic"/);
   assert.match(documents['creators/sensuishi13/index.html'], /Synthetic diver/);
+  for (const html of Object.values(documents)) assert.match(html, /data-cms-static="true"/, 'renderRelease output is static even without an asset prefix');
   for (const html of Object.values(documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
   for (const html of Object.values(documents)) {
     assert.match(html, /<meta property="og:image" content="https:\/\/site\.example\/assets\/ogp\.jpg"/);
@@ -213,6 +214,7 @@ export default { async fetch(request, env) {
     assert.match(html, /src="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/site-config\.js\?v=chat-1"/);
     assert.match(html, /<meta property="og:image" content="https:\/\/site\.example\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg"/);
     assert.match(html, /<meta name="twitter:image" content="https:\/\/site\.example\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg"/);
+    assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/tools\/windows\/obs-tawk-quiet\/Install\.cmd"/);
     assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/tools\/windows\/obs-tawk-quiet\/README\.md"/);
     assert.match(html, /href="https:\/\/site\.example\//);
     assert.doesNotMatch(html, /href="\/__releases[^"]*(?:pricing|creators)/);

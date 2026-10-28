@@ -316,7 +316,7 @@ export function preparePublication(envelope, { cmsOrigin, teamID, siteKey = 'ker
   return data;
 }
 
-export async function renderDocument({ data, route, template, publicOrigin, assetBasePath }) {
+export async function renderDocument({ data, route, template, publicOrigin, assetBasePath, staticMode = false }) {
   assetBasePath = validatedAssetBasePath(assetBasePath);
   const asset = new Response(template, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   const canonical = `${new URL(publicOrigin).origin}${route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/'}`;
@@ -326,7 +326,7 @@ export async function renderDocument({ data, route, template, publicOrigin, asse
   headers.set('cache-control', 'no-store');
   headers.set('content-type', 'text/html; charset=utf-8');
   return new HTMLRewriter()
-    .on('html', { element(element) { if (assetBasePath) element.setAttribute('data-cms-static', 'true'); } })
+    .on('html', { element(element) { if (staticMode) element.setAttribute('data-cms-static', 'true'); } })
     .on('link[href]', { element(element) {
       const rel = (element.getAttribute('rel') || '').toLowerCase().split(/\s+/);
       if (rel.some(value => ['stylesheet', 'icon', 'apple-touch-icon', 'manifest', 'preload', 'modulepreload'].includes(value))) rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath);
@@ -334,6 +334,7 @@ export async function renderDocument({ data, route, template, publicOrigin, asse
     .on('script[src], img[src], source[src], video[poster], audio[src], track[src], input[src], iframe[src], object[data]', { element(element) {
       for (const attribute of ['src', 'poster', 'data']) rewriteAssetAttribute(element, attribute, resourceBase, assetBasePath);
     } })
+    .on('a[href]', { element(element) { rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath); } })
     .on('a[download][href]', { element(element) { rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath, true); } })
     .on('[data-cms]', { element(element) { element.replace(htmlForSlot(element.getAttribute('data-cms'), data, route.slug), { html: true }); } })
     .on('[data-cms-sets-intro]', { element(element) { element.setInnerContent(setsIntro(data.pricing)); } })
@@ -446,7 +447,7 @@ export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'ke
     const route = templateFor(pathname);
     const template = await templateLoader(route.asset);
     const validatedTemplate = await validateReleaseTemplate(template, route);
-    const response = await renderDocument({ data, route, template: validatedTemplate, publicOrigin, assetBasePath });
+    const response = await renderDocument({ data, route, template: validatedTemplate, publicOrigin, assetBasePath, staticMode: true });
     documents[filename] = await response.text();
   }
   return documents;
