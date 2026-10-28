@@ -281,11 +281,78 @@ export async function fetchPublication(env) {
   if (!upstream.ok) fail('CMS returned a non-success response');
   const body = await upstream.json();
   if (body == null) fail('CMS has no active publication');
-  const data = normalizeSnapshot(body, origin.origin, env.CMS_TEAM_ID, env.CMS_SITE_KEY || 'keroct');
+  return preparePublication(body, { cmsOrigin: origin.origin, teamID: env.CMS_TEAM_ID, siteKey: env.CMS_SITE_KEY || 'keroct', serviceBindings: env.CMS_SERVICE_BINDINGS || '' });
+}
+
+export function preparePublication(envelope, { cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '' }) {
+  const data = normalizeSnapshot(envelope, cmsOrigin, teamID, siteKey);
   if (data.presentation.featuredWorks.some(work => !data.creatorsByID.has(work.creator))) fail('featured work creator is missing');
-  data.serviceBindings = env.CMS_SERVICE_BINDINGS || '';
-  data.serviceHtml = serviceCards(data.pricing, data.serviceBindings);
+  data.serviceBindings = serviceBindings;
+  data.serviceHtml = serviceCards(data.pricing, serviceBindings);
   return data;
+}
+
+export async function renderDocument({ data, route, template, publicOrigin }) {
+  const asset = new Response(template, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  const canonical = `${new URL(publicOrigin).origin}${route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/'}`;
+  const headers = new Headers(asset.headers);
+  headers.set('cache-control', 'no-store');
+  headers.set('content-type', 'text/html; charset=utf-8');
+  return new HTMLRewriter()
+    .on('[data-cms]', { element(element) { element.replace(htmlForSlot(element.getAttribute('data-cms'), data, route.slug), { html: true }); } })
+    .on('[data-cms-sets-intro]', { element(element) { element.setInnerContent(setsIntro(data.pricing)); } })
+    .on('[data-cms-profile-heading]', { element(element) { element.setInnerContent(`${data.creatorsBySlug.get(route.slug).title}の制作例`); } })
+    .on('[data-cms-profile-intro]', { element(element) { element.setInnerContent(data.creatorsBySlug.get(route.slug).portfolioIntro); } })
+    .on('.work', { element(element) { element.remove(); } })
+    .on('.creator-feature', { element(element) { element.remove(); } })
+    .on('.service-list > a', { element(element) { element.remove(); } })
+    .on('.profile-grid > div', { element(element) { element.remove(); } })
+    .on('.hero-art > img', { element(element) { element.remove(); } })
+    .on('.price-group', { element(element) { element.remove(); } })
+    .on('.set-plan', { element(element) { element.remove(); } })
+    .on('.option', { element(element) { element.remove(); } })
+    .on('#conditions li', { element(element) { element.remove(); } })
+    .on('title', { element(element) { element.setInnerContent(headTitle(data, route)); } })
+    .on('link[rel="canonical"]', { element(element) { element.setAttribute('href', canonical); } })
+    .on('meta[property="og:url"]', { element(element) { element.setAttribute('content', canonical); } })
+    .on('meta[property="og:title"]', { element(element) { element.setAttribute('content', headTitle(data, route)); } })
+    .on('meta[name="twitter:title"]', { element(element) { element.setAttribute('content', headTitle(data, route)); } })
+    .on('meta[name="description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
+    .on('meta[property="og:description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
+    .transform(new Response(asset.body, { status: asset.status, headers }));
+}
+
+const releaseRoutes = [
+  ['index.html', '/'], ['pricing/index.html', '/pricing/'],
+  ['creators/kaerunoankake/index.html', '/creators/kaerunoankake/'],
+  ['creators/sensuishi13/index.html', '/creators/sensuishi13/'],
+];
+export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '', templateLoader, publicOrigin, mapMediaURL }) {
+  const data = preparePublication(envelope, { cmsOrigin, teamID, siteKey, serviceBindings });
+  if (typeof templateLoader !== 'function' || typeof mapMediaURL !== 'function') fail('templateLoader and mapMediaURL are required');
+  const seen = new Set();
+  const rewriteMedia = value => {
+    if (!value || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    if (value instanceof Map) { for (const [key, item] of value) rewriteMedia(item); return; }
+    for (const [key, item] of Object.entries(value)) {
+      if (typeof item === 'string' && /Url$/.test(key) && item) {
+        const local = mapMediaURL(item);
+        if (typeof local !== 'string' || !local.startsWith('/') || local.startsWith('//') || local.includes('..')) fail(`missing local media mapping for ${item}`);
+        value[key] = local;
+      } else rewriteMedia(item);
+    }
+  };
+  rewriteMedia(data);
+  const documents = {};
+  for (const [filename, pathname] of releaseRoutes) {
+    const route = templateFor(pathname);
+    const template = await templateLoader(route.asset);
+    if (typeof template !== 'string') fail(`template is unavailable: ${route.asset}`);
+    const response = await renderDocument({ data, route, template, publicOrigin });
+    documents[filename] = await response.text();
+  }
+  return documents;
 }
 
 async function handleRequest(request, env) {
@@ -302,33 +369,7 @@ async function handleRequest(request, env) {
     const assetURL = new URL(route.asset, url.origin);
     const asset = await env.ASSETS.fetch(new Request(assetURL, request));
     if (!asset.ok) fail('site template is unavailable');
-    const canonical = `${url.origin}${route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/'}`;
-    const headers = new Headers(asset.headers);
-    headers.set('cache-control', 'no-store');
-    headers.set('content-type', 'text/html; charset=utf-8');
-    const html = new HTMLRewriter()
-      .on('[data-cms]', { element(element) { element.replace(htmlForSlot(element.getAttribute('data-cms'), data, route.slug), { html: true }); } })
-      .on('[data-cms-sets-intro]', { element(element) { element.setInnerContent(setsIntro(data.pricing)); } })
-      .on('[data-cms-profile-heading]', { element(element) { element.setInnerContent(`${data.creatorsBySlug.get(route.slug).title}の制作例`); } })
-      .on('[data-cms-profile-intro]', { element(element) { element.setInnerContent(data.creatorsBySlug.get(route.slug).portfolioIntro); } })
-      .on('.work', { element(element) { element.remove(); } })
-      .on('.creator-feature', { element(element) { element.remove(); } })
-      .on('.service-list > a', { element(element) { element.remove(); } })
-      .on('.profile-grid > div', { element(element) { element.remove(); } })
-      .on('.hero-art > img', { element(element) { element.remove(); } })
-      .on('.price-group', { element(element) { element.remove(); } })
-      .on('.set-plan', { element(element) { element.remove(); } })
-      .on('.option', { element(element) { element.remove(); } })
-      .on('#conditions li', { element(element) { element.remove(); } })
-      .on('title', { element(element) { element.setInnerContent(headTitle(data, route)); } })
-      .on('link[rel="canonical"]', { element(element) { element.setAttribute('href', canonical); } })
-      .on('meta[property="og:url"]', { element(element) { element.setAttribute('content', canonical); } })
-      .on('meta[property="og:title"]', { element(element) { element.setAttribute('content', headTitle(data, route)); } })
-      .on('meta[name="twitter:title"]', { element(element) { element.setAttribute('content', headTitle(data, route)); } })
-      .on('meta[name="description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
-      .on('meta[property="og:description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
-      .transform(new Response(asset.body, { status: asset.status, headers }));
-    return html;
+    return await renderDocument({ data, route, template: await asset.text(), publicOrigin: url.origin });
   } catch {
     return response(genericFailure, 503, { 'content-type': 'text/html; charset=utf-8' });
   }

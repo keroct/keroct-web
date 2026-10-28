@@ -63,7 +63,7 @@ async function waitForWorker(url, child) {
     const origin = new URL(url).origin;
     const readyURL = advertisedPort ? origin.replace(/:\d+$/, `:${advertisedPort}`) : origin;
     let result;
-    try { result = await fetch(readyURL); }
+    try { result = await fetch(readyURL, { signal: AbortSignal.timeout(3000) }); }
     catch (error) { lastError = `${error.message}; ${error.cause?.message || ''}`; }
     if (result && result.status !== 503) return readyURL;
     if (result && ++unavailableResponses >= 3) return readyURL;
@@ -119,6 +119,64 @@ test('the pinned KEROCT contract artifact describes valid and invalid boundaries
   assert.deepEqual(fixtures.validBoundaries.setRevisions, [0, 2, 5, Number.MAX_SAFE_INTEGER]);
   assert.ok(fixtures.invalidBoundaries.setRevisions.includes(-1));
   assert.ok(fixtures.invalidBoundaries.categories.includes('other'));
+});
+
+test('the static release renderer emits four mapped documents from an explicit envelope', async t => {
+  const scratchRoot = path.join(cmsSite, '.wrangler');
+  mkdirSync(scratchRoot, { recursive: true });
+  const scratch = mkdtempSync(path.join(scratchRoot, 'release-renderer-'));
+  const workerFile = path.join(scratch, 'worker.mjs');
+  const configFile = path.join(scratch, 'wrangler.toml');
+  let importPath = path.relative(scratch, path.join(cmsSite, 'src/index.js')).replaceAll('\\', '/');
+  if (!importPath.startsWith('.')) importPath = './' + importPath;
+  writeFileSync(workerFile, `import { renderRelease } from ${JSON.stringify(importPath)};
+export default { async fetch(request, env) {
+  if (request.method === 'GET') return new Response('ready');
+  if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
+  try {
+  const { envelope, missingMapping } = await request.json();
+    const documents = await renderRelease({ envelope, cmsOrigin: 'https://cms.example', teamID: 'team-1', publicOrigin: 'https://site.example',
+      templateLoader: async assetPath => { const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
+      mapMediaURL: url => missingMapping && url.includes('/work') ? null : '/release-media/' + url.split('/').pop() });
+    return Response.json(documents);
+  } catch (error) { return new Response(error.message, { status: 400 }); }
+} };`, 'utf8');
+  writeFileSync(configFile, [
+    'name = "keroct-static-release-test"', `main = "${workerFile.replaceAll('\\', '/')}"`,
+    'compatibility_date = "2026-10-26"', 'workers_dev = true', '', '[assets]',
+    `directory = "${path.join(cmsSite, 'test/fixtures/assets').replaceAll('\\', '/')}"`, 'binding = "ASSETS"', 'run_worker_first = true',
+  ].join('\n'));
+  const port = await freePort();
+  const worker = spawn(process.execPath, [path.join(cmsSite, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'dev', '--config', configFile, '--local', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'info'], { cwd: cmsSite, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  worker.output = '';
+  worker.stdout.on('data', chunk => { worker.output += chunk.toString(); });
+  worker.stderr.on('data', chunk => { worker.output += chunk.toString(); });
+  t.after(async () => {
+    if (worker.pid != null && worker.exitCode === null) { const exited = once(worker, 'exit'); worker.kill(); await exited; }
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const origin = await waitForWorker(`http://127.0.0.1:${port}/`, worker);
+  const envelope = publication('release-test', 1, 'release');
+  const before = JSON.stringify(envelope);
+  let response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope }), signal: AbortSignal.timeout(15000) });
+  const responseBody = await response.text();
+  assert.equal(response.status, 200, `${responseBody}\n${worker.output}`);
+  const documents = JSON.parse(responseBody);
+  assert.deepEqual(Object.keys(documents).sort(), ['creators/kaerunoankake/index.html', 'creators/sensuishi13/index.html', 'index.html', 'pricing/index.html'].sort());
+  assert.match(documents['index.html'], /KEROCT release \| KEROCT造船所/);
+  assert.match(documents['index.html'], /Creator release &lt;&amp;&quot;/);
+  assert.match(documents['index.html'], /data-category="logo"/);
+  assert.match(documents['index.html'], /data-image="\/release-media\/large"/);
+  assert.match(documents['index.html'], /href="https:\/\/site\.example\/"/);
+  assert.match(documents['pricing/index.html'], /¥6,000/);
+  assert.match(documents['pricing/index.html'], /data-cms-media/);
+  assert.match(documents['creators/kaerunoankake/index.html'], /かえるの<br>あんかけ/);
+  assert.match(documents['creators/sensuishi13/index.html'], /Synthetic diver/);
+  for (const html of Object.values(documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
+  assert.equal(JSON.stringify(envelope), before);
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, missingMapping: true }), signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 400);
+  assert.match(await response.text(), /missing local media mapping/);
 });
 
 test('the Worker renders synthetic active publications and fails closed', async t => {
