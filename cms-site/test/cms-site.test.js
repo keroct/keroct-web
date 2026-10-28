@@ -135,11 +135,11 @@ export default { async fetch(request, env) {
   if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
   let templateLoads = 0;
   try {
-  const { envelope, missingMapping, unsupportedCreator } = await request.json();
+  const { envelope, missingMapping, unsupportedCreator, mappedPath, templateOverride } = await request.json();
   if (unsupportedCreator) envelope.snapshot.creators.push({ ...envelope.snapshot.creators[0], id: 'extra-creator', slug: 'unsupported-creator', order: 9 });
     const documents = await renderRelease({ envelope, cmsOrigin: 'https://cms.example', teamID: 'team-1', publicOrigin: 'https://site.example',
-      templateLoader: async assetPath => { templateLoads++; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
-      mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : '/release-media/' + url.split('/').pop(); } });
+      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
+      mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : mappedPath ?? '/release-media/' + url.split('/').pop(); } });
     return Response.json(documents);
   } catch (error) { return Response.json({ error: error.message, templateLoads }, { status: 400 }); }
 } };`, 'utf8');
@@ -191,6 +191,18 @@ export default { async fetch(request, env) {
   const unsupported = await response.json();
   assert.match(unsupported.error, /without a static template/);
   assert.equal(unsupported.templateLoads, 0);
+  for (const mappedPath of ['/\\external.example/image.png', '/release-media/%2f%2fexternal.example/x', '/release-media/%2e%2e/private', '/release-media/%252f%252fexternal.example/x']) {
+    response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, mappedPath }), signal: AbortSignal.timeout(15000) });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /missing local media mapping/);
+  }
+  const pricingTemplate = readFileSync(path.join(cmsSite, 'test/fixtures/assets/pricing/index.html'), 'utf8');
+  const homeTemplate = readFileSync(path.join(cmsSite, 'test/fixtures/assets/index.html'), 'utf8');
+  for (const templateOverride of ['', pricingTemplate, homeTemplate.replace('<span data-cms="home-works"></span>', '')]) {
+    response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, templateOverride }), signal: AbortSignal.timeout(15000) });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /template/);
+  }
 });
 
 test('the Worker renders synthetic active publications and fails closed', async t => {

@@ -327,6 +327,57 @@ const releaseRoutes = [
   ['creators/kaerunoankake/index.html', '/creators/kaerunoankake/'],
   ['creators/sensuishi13/index.html', '/creators/sensuishi13/'],
 ];
+const requiredTemplateSlots = {
+  home: ['home-hero', 'home-works', 'creators', 'service-cards'],
+  pricing: ['pricing-design', 'pricing-sets', 'pricing-illustration', 'pricing-options', 'pricing-conditions'],
+  creator: ['profile', 'creator-works'],
+};
+const requiredTemplateMarkers = {
+  home: [],
+  pricing: ['data-cms-sets-intro'],
+  creator: ['data-cms-profile-heading', 'data-cms-profile-intro'],
+};
+async function validateReleaseTemplate(template, route) {
+  if (typeof template !== 'string' || !template.trim()) fail(`template is empty: ${route.asset}`);
+  const found = new Map();
+  const collect = selector => ({ element() { found.set(selector, (found.get(selector) ?? 0) + 1); } });
+  let parsed;
+  try {
+    parsed = await new HTMLRewriter()
+      .on('html', collect('html')).on('head', collect('head')).on('body', collect('body'))
+      .on('title', collect('title')).on('link[rel="canonical"]', collect('canonical'))
+      .on('[data-cms]', { element(element) { const marker = element.getAttribute('data-cms'); found.set(`slot:${marker}`, (found.get(`slot:${marker}`) ?? 0) + 1); } })
+      .on('[data-cms-sets-intro]', collect('data-cms-sets-intro'))
+      .on('[data-cms-profile-heading]', collect('data-cms-profile-heading'))
+      .on('[data-cms-profile-intro]', collect('data-cms-profile-intro'))
+      .transform(new Response(template)).text();
+  } catch { fail(`template is invalid: ${route.asset}`); }
+  const expectedSlots = new Set(requiredTemplateSlots[route.kind]);
+  for (const [key, count] of found) {
+    if (key.startsWith('slot:') && (!expectedSlots.has(key.slice(5)) || count !== 1)) fail(`template has an unexpected CMS slot: ${route.asset}`);
+  }
+  for (const marker of ['html', 'head', 'body', 'title', 'canonical', ...requiredTemplateMarkers[route.kind]]) {
+    if (found.get(marker) !== 1) fail(`template is missing or duplicates required markers: ${route.asset}`);
+  }
+  for (const slot of expectedSlots) if (found.get(`slot:${slot}`) !== 1) fail(`template is missing or duplicates required markers: ${route.asset}`);
+  for (const marker of Object.values(requiredTemplateMarkers).flat()) {
+    if (!requiredTemplateMarkers[route.kind].includes(marker) && found.has(marker)) fail(`template has a marker for another route: ${route.asset}`);
+  }
+  return parsed;
+}
+function localMediaPath(value, publicOrigin, sourceURL) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u001f\u007f?#]/.test(value) || /%(?:25|2f|5c|2e|0[0-9a-f]|1[0-9a-f]|7f)/i.test(value)) {
+    fail(`missing local media mapping for ${sourceURL}`);
+  }
+  let resolved;
+  try { resolved = new URL(value, publicOrigin); } catch { fail(`missing local media mapping for ${sourceURL}`); }
+  if (resolved.origin !== new URL(publicOrigin).origin || resolved.username || resolved.password || resolved.search || resolved.hash || resolved.pathname !== value) fail(`missing local media mapping for ${sourceURL}`);
+  const parts = resolved.pathname.split('/');
+  let decoded;
+  try { decoded = parts.map(part => decodeURIComponent(part)); } catch { fail(`missing local media mapping for ${sourceURL}`); }
+  if (decoded.some(part => part === '.' || part === '..' || /[\\\u0000-\u001f\u007f]/.test(part) || /%(?:2f|5c|2e|0[0-9a-f]|1[0-9a-f]|7f)/i.test(part))) fail(`missing local media mapping for ${sourceURL}`);
+  return value;
+}
 export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '', templateLoader, publicOrigin, mapMediaURL }) {
   const data = preparePublication(envelope, { cmsOrigin, teamID, siteKey, serviceBindings });
   if (typeof templateLoader !== 'function' || typeof mapMediaURL !== 'function') fail('templateLoader and mapMediaURL are required');
@@ -341,8 +392,7 @@ export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'ke
     for (const [key, item] of Object.entries(value)) {
       if (typeof item === 'string' && mediaFields.has(key) && item) {
         const local = mapMediaURL(item);
-        if (typeof local !== 'string' || !local.startsWith('/') || local.startsWith('//') || local.includes('..')) fail(`missing local media mapping for ${item}`);
-        value[key] = local;
+        value[key] = localMediaPath(local, publicOrigin, item);
       } else rewriteMedia(item);
     }
   };
@@ -351,8 +401,8 @@ export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'ke
   for (const [filename, pathname] of releaseRoutes) {
     const route = templateFor(pathname);
     const template = await templateLoader(route.asset);
-    if (typeof template !== 'string') fail(`template is unavailable: ${route.asset}`);
-    const response = await renderDocument({ data, route, template, publicOrigin });
+    const validatedTemplate = await validateReleaseTemplate(template, route);
+    const response = await renderDocument({ data, route, template: validatedTemplate, publicOrigin });
     documents[filename] = await response.text();
   }
   return documents;
