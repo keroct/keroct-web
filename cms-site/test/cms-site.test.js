@@ -127,6 +127,15 @@ test('the static release renderer emits four mapped documents from an explicit e
   const scratch = mkdtempSync(path.join(scratchRoot, 'release-renderer-'));
   const workerFile = path.join(scratch, 'worker.mjs');
   const configFile = path.join(scratch, 'wrangler.toml');
+  const assetDirectory = path.join(scratch, 'assets');
+  mkdirSync(path.join(assetDirectory, 'pricing'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'creators', 'kaerunoankake'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'creators', 'sensuishi13'), { recursive: true });
+  for (const [source, destination] of [
+    ['index.html', 'index.html'], ['pricing/index.html', 'pricing/index.html'],
+    ['creators/kaerunoankake/index.html', 'creators/kaerunoankake/index.html'],
+    ['creators/sensuishi13/index.html', 'creators/sensuishi13/index.html'],
+  ]) copyFileSync(path.join(repo, source), path.join(assetDirectory, destination));
   let importPath = path.relative(scratch, path.join(cmsSite, 'src/index.js')).replaceAll('\\', '/');
   if (!importPath.startsWith('.')) importPath = './' + importPath;
   writeFileSync(workerFile, `import { renderRelease } from ${JSON.stringify(importPath)};
@@ -135,10 +144,10 @@ export default { async fetch(request, env) {
   if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
   let templateLoads = 0;
   try {
-  const { envelope, missingMapping, unsupportedCreator, mappedPath, templateOverride } = await request.json();
+  const { envelope, missingMapping, unsupportedCreator, mappedPath, templateOverride, swappedCreatorTemplates } = await request.json();
   if (unsupportedCreator) envelope.snapshot.creators.push({ ...envelope.snapshot.creators[0], id: 'extra-creator', slug: 'unsupported-creator', order: 9 });
     const documents = await renderRelease({ envelope, cmsOrigin: 'https://cms.example', teamID: 'team-1', publicOrigin: 'https://site.example',
-      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
+      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; if (swappedCreatorTemplates?.[assetPath]) return swappedCreatorTemplates[assetPath]; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
       mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : mappedPath ?? '/release-media/' + url.split('/').pop(); } });
     return Response.json(documents);
   } catch (error) { return Response.json({ error: error.message, templateLoads }, { status: 400 }); }
@@ -146,10 +155,11 @@ export default { async fetch(request, env) {
   writeFileSync(configFile, [
     'name = "keroct-static-release-test"', `main = "${workerFile.replaceAll('\\', '/')}"`,
     'compatibility_date = "2026-10-26"', 'workers_dev = true', '', '[assets]',
-    `directory = "${path.join(cmsSite, 'test/fixtures/assets').replaceAll('\\', '/')}"`, 'binding = "ASSETS"', 'run_worker_first = true',
+    `directory = "${assetDirectory.replaceAll('\\', '/')}"`, 'binding = "ASSETS"', 'run_worker_first = true',
   ].join('\n'));
   const port = await freePort();
-  const worker = spawn(process.execPath, [path.join(cmsSite, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'dev', '--config', configFile, '--local', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'info'], { cwd: cmsSite, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const persistDirectory = path.join(cmsSite, '.wrangler', 'release-renderer-state');
+  const worker = spawn(process.execPath, [path.join(cmsSite, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'dev', '--config', configFile, '--local', '--persist-to', persistDirectory, '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'info'], { cwd: cmsSite, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   worker.output = '';
   worker.stdout.on('data', chunk => { worker.output += chunk.toString(); });
   worker.stderr.on('data', chunk => { worker.output += chunk.toString(); });
@@ -179,6 +189,10 @@ export default { async fetch(request, env) {
   assert.match(documents['creators/kaerunoankake/index.html'], /href="https:\/\/x\.com\/synthetic"/);
   assert.match(documents['creators/sensuishi13/index.html'], /Synthetic diver/);
   for (const html of Object.values(documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
+  for (const html of Object.values(documents)) {
+    assert.match(html, /<meta property="og:image" content="https:\/\/site\.example\/assets\/ogp\.jpg"/);
+    assert.match(html, /<meta name="twitter:image" content="https:\/\/site\.example\/assets\/ogp\.jpg"/);
+  }
   assert.equal(JSON.stringify(envelope), before);
   response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, missingMapping: true }), signal: AbortSignal.timeout(15000) });
   assert.equal(response.status, 400);
@@ -196,13 +210,20 @@ export default { async fetch(request, env) {
     assert.equal(response.status, 400);
     assert.match((await response.json()).error, /missing local media mapping/);
   }
-  const pricingTemplate = readFileSync(path.join(cmsSite, 'test/fixtures/assets/pricing/index.html'), 'utf8');
-  const homeTemplate = readFileSync(path.join(cmsSite, 'test/fixtures/assets/index.html'), 'utf8');
+  const pricingTemplate = readFileSync(path.join(repo, 'pricing/index.html'), 'utf8');
+  const homeTemplate = readFileSync(path.join(repo, 'index.html'), 'utf8');
   for (const templateOverride of ['', pricingTemplate, homeTemplate.replace('<span data-cms="home-works"></span>', '')]) {
     response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, templateOverride }), signal: AbortSignal.timeout(15000) });
     assert.equal(response.status, 400);
     assert.match((await response.json()).error, /template/);
   }
+  const kaeruTemplate = readFileSync(path.join(repo, 'creators/kaerunoankake/index.html'), 'utf8');
+  const sensuishiTemplate = readFileSync(path.join(repo, 'creators/sensuishi13/index.html'), 'utf8');
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, swappedCreatorTemplates: {
+    '/creators/kaerunoankake/': sensuishiTemplate, '/creators/sensuishi13/': kaeruTemplate,
+  } }), signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /template identity/);
 });
 
 test('the Worker renders synthetic active publications and fails closed', async t => {

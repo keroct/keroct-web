@@ -295,6 +295,7 @@ export function preparePublication(envelope, { cmsOrigin, teamID, siteKey = 'ker
 export async function renderDocument({ data, route, template, publicOrigin }) {
   const asset = new Response(template, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   const canonical = `${new URL(publicOrigin).origin}${route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/'}`;
+  const socialImage = new URL('/assets/ogp.jpg', publicOrigin).href;
   const headers = new Headers(asset.headers);
   headers.set('cache-control', 'no-store');
   headers.set('content-type', 'text/html; charset=utf-8');
@@ -316,7 +317,9 @@ export async function renderDocument({ data, route, template, publicOrigin }) {
     .on('link[rel="canonical"]', { element(element) { element.setAttribute('href', canonical); } })
     .on('meta[property="og:url"]', { element(element) { element.setAttribute('content', canonical); } })
     .on('meta[property="og:title"]', { element(element) { element.setAttribute('content', headTitle(data, route)); } })
+    .on('meta[property="og:image"]', { element(element) { element.setAttribute('content', socialImage); } })
     .on('meta[name="twitter:title"]', { element(element) { element.setAttribute('content', headTitle(data, route)); } })
+    .on('meta[name="twitter:image"]', { element(element) { element.setAttribute('content', socialImage); } })
     .on('meta[name="description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
     .on('meta[property="og:description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
     .transform(new Response(asset.body, { status: asset.status, headers }));
@@ -340,11 +343,14 @@ const requiredTemplateMarkers = {
 async function validateReleaseTemplate(template, route) {
   if (typeof template !== 'string' || !template.trim()) fail(`template is empty: ${route.asset}`);
   const found = new Map();
+  let templateIdentity;
+  let identityCount = 0;
   const collect = selector => ({ element() { found.set(selector, (found.get(selector) ?? 0) + 1); } });
   let parsed;
   try {
     parsed = await new HTMLRewriter()
-      .on('html', collect('html')).on('head', collect('head')).on('body', collect('body'))
+      .on('html', { element(element) { found.set('html', (found.get('html') ?? 0) + 1); if (element.getAttribute('data-cms-template') != null) { templateIdentity = element.getAttribute('data-cms-template'); identityCount++; } } })
+      .on('head', collect('head')).on('body', collect('body'))
       .on('title', collect('title')).on('link[rel="canonical"]', collect('canonical'))
       .on('[data-cms]', { element(element) { const marker = element.getAttribute('data-cms'); found.set(`slot:${marker}`, (found.get(`slot:${marker}`) ?? 0) + 1); } })
       .on('[data-cms-sets-intro]', collect('data-cms-sets-intro'))
@@ -359,6 +365,8 @@ async function validateReleaseTemplate(template, route) {
   for (const marker of ['html', 'head', 'body', 'title', 'canonical', ...requiredTemplateMarkers[route.kind]]) {
     if (found.get(marker) !== 1) fail(`template is missing or duplicates required markers: ${route.asset}`);
   }
+  const expectedIdentity = route.kind === 'creator' ? `creator-${route.slug}` : route.kind;
+  if (identityCount !== 1 || templateIdentity !== expectedIdentity) fail(`template identity does not match route: ${route.asset}`);
   for (const slot of expectedSlots) if (found.get(`slot:${slot}`) !== 1) fail(`template is missing or duplicates required markers: ${route.asset}`);
   for (const marker of Object.values(requiredTemplateMarkers).flat()) {
     if (!requiredTemplateMarkers[route.kind].includes(marker) && found.has(marker)) fail(`template has a marker for another route: ${route.asset}`);
