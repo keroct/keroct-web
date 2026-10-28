@@ -1,3 +1,4 @@
+import contract from '../contracts/keroct-v1.json' with { type: 'json' };
 const genericFailure = `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ページを表示できません</title><body><main><h1>ページを表示できません</h1><p>公開内容を読み込めませんでした。時間をおいて再度お試しください。</p></main></body></html>`;
 const mediaPrefix = '/api/public-media/';
 
@@ -43,12 +44,12 @@ function safePath(value, cmsOrigin, label, teamID, snapshotID) {
   return url.href;
 }
 
-function normalizeSnapshot(payload, cmsOrigin, teamID, siteKey) {
+export function normalizeSnapshot(payload, cmsOrigin, teamID, siteKey) {
   record(payload, 'publication');
   if (typeof payload.id !== 'string' && typeof payload.id !== 'number') fail('publication.id is required');
   if (!Number.isSafeInteger(payload.revision) || payload.revision < 1) fail('publication.revision is invalid');
   const snapshot = record(payload.snapshot, 'publication.snapshot');
-  if (snapshot.schemaVersion !== 2) fail('schemaVersion 2 is required');
+  if (snapshot.schemaVersion !== contract.schemaVersion) fail('schemaVersion 2 is required');
   const snapshotID = String(payload.id);
   const media = (value, label) => safePath(value, cmsOrigin, label, teamID, snapshotID);
 
@@ -67,17 +68,18 @@ function normalizeSnapshot(payload, cmsOrigin, teamID, siteKey) {
   const creatorsByID = new Map(creators.map(item => [item.id, item]));
   const creatorsBySlug = new Map(creators.map(item => [item.slug, item]));
   if (creatorsByID.size !== creators.length || creatorsBySlug.size !== creators.length) fail('creator IDs and slugs must be unique');
-  for (const creator of creators) if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(creator.slug)) fail('creator slug is invalid');
+  for (const creator of creators) if (!new RegExp(contract.creatorSlugPattern).test(creator.slug)) fail('creator slug is invalid');
 
   const works = list(snapshot.works, 'works').map((input, index) => {
     const item = record(input, `works[${index}]`);
     const creatorID = id(item.creator, 'work.creator');
     if (!creatorsByID.has(creatorID)) fail('work references a missing creator');
+    if (!contract.categories.includes(item.category)) fail('work.category is invalid');
     const image = id(item.image, 'work.image');
     const enlargedImage = id(item.enlargedImage, 'work.enlargedImage', true);
     return {
       id: id(item.id, 'work.id'), slug: text(item.slug, 'work.slug'), title: text(item.title, 'work.title'),
-      category: text(item.category, 'work.category', true), description: text(item.description, 'work.description', true),
+      category: text(item.category, 'work.category'), description: text(item.description, 'work.description', true),
       alt: text(item.alt, 'work.alt'), creator: creatorID, image,
       imageUrl: media(item.imageUrl, 'work.imageUrl'), enlargedImage,
       enlargedImageUrl: item.enlargedImageUrl == null ? '' : media(item.enlargedImageUrl, 'work.enlargedImageUrl'),
@@ -99,7 +101,7 @@ function normalizeSnapshot(payload, cmsOrigin, teamID, siteKey) {
     });
     const sets = list(item.sets ?? [], 'pricing.sets').map(setInput => {
       const set = record(setInput, 'pricing set');
-      if (set.revisions !== null && !Number.isSafeInteger(set.revisions)) fail('set.revisions is invalid');
+      if (set.revisions !== null && (!Number.isSafeInteger(set.revisions) || set.revisions < 0)) fail('set.revisions is invalid');
       return { name: text(set.name, 'set.name'), price: text(set.price, 'set.price'), items: list(set.items, 'set.items').map(child => text(record(child, 'set item').name, 'set item name')), revisions: set.revisions };
     });
     const options = list(item.options ?? [], 'pricing.options').map(optionInput => {
@@ -131,7 +133,7 @@ function normalizeSnapshot(payload, cmsOrigin, teamID, siteKey) {
   }).sort((a, b) => a.order - b.order);
   const presentation = presentations.find(item => item.siteKey === siteKey);
   if (!presentation) fail('configured presentation is missing');
-  if (presentation.featuredWorks.length > 6 || presentation.heroImages.length > 2) fail('presentation exceeds the KEROCT template slots');
+  if (presentation.featuredWorks.length > contract.maxFeatured || presentation.heroImages.length > contract.maxHero) fail('presentation exceeds the KEROCT template slots');
   for (const item of pricing) for (const example of item.examples) if (example.creator && !creatorsByID.has(example.creator)) fail('pricing example references a missing creator');
   return { id: String(payload.id), revision: payload.revision, creators, creatorsByID, creatorsBySlug, works, worksByID, pricing, presentation, teamID };
 }

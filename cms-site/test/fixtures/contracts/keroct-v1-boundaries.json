@@ -1,0 +1,5 @@
+{
+  "contractVersion": "keroct-v1",
+  "validBoundaries": {"featuredWorks": [0, 6], "heroImages": [0, 2], "setRevisions": [0, 2, 5, 9007199254740991]},
+  "invalidBoundaries": {"featuredWorks": [7], "heroImages": [3], "setRevisions": [-1, 1.5, 9007199254740992], "categories": ["other"], "creatorSlugs": ["", "-leading", "contains space"]}
+}

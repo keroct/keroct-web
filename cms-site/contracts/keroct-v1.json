@@ -1,0 +1,9 @@
+{
+  "version": "keroct-v1",
+  "schemaVersion": 2,
+  "creatorSlugPattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+  "categories": ["logo", "stream", "illustration"],
+  "maxFeatured": 6,
+  "maxHero": 2,
+  "revisions": "nullableNonnegativeSafeInteger"
+}

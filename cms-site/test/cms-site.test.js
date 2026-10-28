@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { normalizeSnapshot } from '../src/index.js';
 import { runInNewContext } from 'node:vm';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +71,55 @@ async function waitForWorker(url, child) {
   }
   throw new Error(`Wrangler did not become ready: ${child.output}; ${lastError}`);
 }
+
+test('the KEROCT normalizer enforces contract category and revision boundaries', () => {
+  const payload = publication('contract-test', 1, 'contract');
+  const normalize = () => normalizeSnapshot(payload, 'http://localhost', 'team-1', 'keroct');
+  for (const revisions of [0, 2, 5, Number.MAX_SAFE_INTEGER, null]) {
+    payload.snapshot.pricing[2].sets[0].revisions = revisions;
+    assert.doesNotThrow(normalize);
+  }
+  for (const revisions of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    payload.snapshot.pricing[2].sets[0].revisions = revisions;
+    assert.throws(normalize);
+  }
+  payload.snapshot.pricing[2].sets[0].revisions = 0;
+  payload.snapshot.works[0].category = 'other';
+  assert.throws(normalize);
+  payload.snapshot.works[0].category = 'stream';
+  assert.doesNotThrow(normalize);
+  payload.snapshot.works[0].category = 'logo';
+  payload.snapshot.creators[0].slug = '-invalid';
+  assert.throws(normalize);
+  payload.snapshot.creators[0].slug = 'synthetic-one';
+  const presentation = payload.snapshot.presentations[1];
+  presentation.featuredWorks = [];
+  presentation.heroImages = [];
+  assert.doesNotThrow(normalize);
+  presentation.featuredWorks = Array.from({ length: 6 }, () => ({ work: 'work-1' }));
+  presentation.heroImages = [0, 1].map(index => ({ imageUrl: '/api/public-media/team-1/contract-test/hero-' + index, alt: 'Synthetic hero' }));
+  assert.doesNotThrow(normalize);
+  presentation.featuredWorks.push({ work: 'work-1' });
+  assert.throws(normalize);
+  presentation.featuredWorks.pop();
+  presentation.heroImages.push({ imageUrl: '/api/public-media/team-1/contract-test/hero-3', alt: 'Synthetic hero' });
+  assert.throws(normalize);
+});
+
+test('the pinned KEROCT contract artifact describes valid and invalid boundaries', () => {
+  const contract = JSON.parse(readFileSync(path.join(cmsSite, 'contracts/keroct-v1.json'), 'utf8'));
+  const fixtures = JSON.parse(readFileSync(path.join(cmsSite, 'test/fixtures/contracts/keroct-v1-boundaries.json'), 'utf8'));
+  assert.equal(contract.version, 'keroct-v1');
+  assert.equal(contract.schemaVersion, 2);
+  assert.deepEqual(contract.categories, ['logo', 'stream', 'illustration']);
+  assert.equal(contract.maxFeatured, 6);
+  assert.equal(contract.maxHero, 2);
+  assert.equal(contract.revisions, 'nullableNonnegativeSafeInteger');
+  assert.equal(fixtures.contractVersion, contract.version);
+  assert.deepEqual(fixtures.validBoundaries.setRevisions, [0, 2, 5, Number.MAX_SAFE_INTEGER]);
+  assert.ok(fixtures.invalidBoundaries.setRevisions.includes(-1));
+  assert.ok(fixtures.invalidBoundaries.categories.includes('other'));
+});
 
 test('the Worker renders synthetic active publications and fails closed', async t => {
   const state = { current: publication('snapshot-a', 1, 'A') };
