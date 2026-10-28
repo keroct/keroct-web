@@ -320,7 +320,7 @@ export async function renderDocument({ data, route, template, publicOrigin, asse
   assetBasePath = validatedAssetBasePath(assetBasePath);
   const asset = new Response(template, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   const canonical = `${new URL(publicOrigin).origin}${route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/'}`;
-  const socialImage = assetBasePath ? `${assetBasePath}assets/ogp.jpg` : new URL('/assets/ogp.jpg', publicOrigin).href;
+  const socialImage = assetBasePath ? new URL(`${assetBasePath}assets/ogp.jpg`, publicOrigin).href : new URL('/assets/ogp.jpg', publicOrigin).href;
   const resourceBase = new URL(canonical);
   const headers = new Headers(asset.headers);
   headers.set('cache-control', 'no-store');

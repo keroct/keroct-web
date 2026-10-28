@@ -211,7 +211,8 @@ export default { async fetch(request, env) {
     assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/style\.css"/);
     assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/fonts\/ZenKakuGothicNew-Black\.ttf"/);
     assert.match(html, /src="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/site-config\.js\?v=chat-1"/);
-    assert.match(html, /og:image" content="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg/);
+    assert.match(html, /<meta property="og:image" content="https:\/\/site\.example\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg"/);
+    assert.match(html, /<meta name="twitter:image" content="https:\/\/site\.example\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg"/);
     assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/tools\/windows\/obs-tawk-quiet\/README\.md"/);
     assert.match(html, /href="https:\/\/site\.example\//);
     assert.doesNotMatch(html, /href="\/__releases[^"]*(?:pricing|creators)/);
