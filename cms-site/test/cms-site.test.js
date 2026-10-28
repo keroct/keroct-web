@@ -7,12 +7,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { normalizeSnapshot } from '../src/index.js';
+import { auxiliaryHTMLPaths, normalizeSnapshot } from '../src/index.js';
 import { runInNewContext } from 'node:vm';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cmsSite = path.resolve(here, '..');
 const repo = path.resolve(cmsSite, '..');
+
+test('auxiliary HTML output is limited to manifest HTML outside the four CMS-rendered routes', () => {
+  assert.deepEqual(auxiliaryHTMLPaths, [
+    'tools/windows/obs-tawk-quiet/VERIFICATION.html',
+    'tools/windows/obs-tawk-quiet/index.html',
+  ]);
+});
 
 function publication(snapshotID, revision, marker) {
   const url = name => `/api/public-media/team-1/${snapshotID}/${name}`;
