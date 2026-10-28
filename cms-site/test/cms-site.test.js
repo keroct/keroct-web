@@ -131,11 +131,18 @@ test('the static release renderer emits four mapped documents from an explicit e
   mkdirSync(path.join(assetDirectory, 'pricing'), { recursive: true });
   mkdirSync(path.join(assetDirectory, 'creators', 'kaerunoankake'), { recursive: true });
   mkdirSync(path.join(assetDirectory, 'creators', 'sensuishi13'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'scripts'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'data'), { recursive: true });
   for (const [source, destination] of [
     ['index.html', 'index.html'], ['pricing/index.html', 'pricing/index.html'],
     ['creators/kaerunoankake/index.html', 'creators/kaerunoankake/index.html'],
     ['creators/sensuishi13/index.html', 'creators/sensuishi13/index.html'],
   ]) copyFileSync(path.join(repo, source), path.join(assetDirectory, destination));
+  copyFileSync(path.join(repo, 'scripts/render-pricing.py'), path.join(assetDirectory, 'scripts/render-pricing.py'));
+  copyFileSync(path.join(repo, 'data/pricing.json'), path.join(assetDirectory, 'data/pricing.json'));
+  const pricingGeneration = spawnSync(process.env.PYTHON || 'python', [path.join(assetDirectory, 'scripts/render-pricing.py')], { encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
+  assert.equal(pricingGeneration.status, 0, pricingGeneration.stderr);
+  assert.match(readFileSync(path.join(assetDirectory, 'pricing/index.html'), 'utf8'), /data-cms-template="pricing"/);
   let importPath = path.relative(scratch, path.join(cmsSite, 'src/index.js')).replaceAll('\\', '/');
   if (!importPath.startsWith('.')) importPath = './' + importPath;
   writeFileSync(workerFile, `import { renderRelease } from ${JSON.stringify(importPath)};
