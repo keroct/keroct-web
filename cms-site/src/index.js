@@ -1,4 +1,28 @@
 import contract from '../contracts/keroct-v1.json' with { type: 'json' };
+import publicAssets from '../contracts/public-assets-v1.json' with { type: 'json' };
+const publicAssetPaths = new Set(publicAssets.assets.map(asset => asset.path));
+const releasePathPattern = /^\/__releases\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/$/i;
+function validatedAssetBasePath(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !releasePathPattern.test(value)) fail('assetBasePath is invalid');
+  return value;
+}
+function versionedAssetURL(value, baseURL, assetBasePath, allowHTML = false) {
+  if (!assetBasePath || typeof value !== 'string' || !value || value.startsWith('//')) return null;
+  let resolved;
+  try { resolved = new URL(value, baseURL); } catch { return null; }
+  if (resolved.origin !== baseURL.origin || resolved.username || resolved.password) return null;
+  const pathname = resolved.pathname;
+  if (/%[0-9a-f]{2}/i.test(pathname)) return null;
+  const assetPath = pathname.replace(/^\//, '');
+  if (!publicAssetPaths.has(assetPath) || (!allowHTML && (assetPath === 'index.html' || assetPath.endsWith('/index.html')))) return null;
+  return `${assetBasePath}${assetPath}${resolved.search}${resolved.hash}`;
+}
+function rewriteAssetAttribute(element, attribute, baseURL, assetBasePath, allowHTML = false) {
+  const value = element.getAttribute(attribute);
+  const rewritten = versionedAssetURL(value, baseURL, assetBasePath, allowHTML);
+  if (rewritten) element.setAttribute(attribute, rewritten);
+}
 const genericFailure = `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ページを表示できません</title><body><main><h1>ページを表示できません</h1><p>公開内容を読み込めませんでした。時間をおいて再度お試しください。</p></main></body></html>`;
 const mediaPrefix = '/api/public-media/';
 
@@ -292,14 +316,25 @@ export function preparePublication(envelope, { cmsOrigin, teamID, siteKey = 'ker
   return data;
 }
 
-export async function renderDocument({ data, route, template, publicOrigin }) {
+export async function renderDocument({ data, route, template, publicOrigin, assetBasePath }) {
+  assetBasePath = validatedAssetBasePath(assetBasePath);
   const asset = new Response(template, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   const canonical = `${new URL(publicOrigin).origin}${route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/'}`;
-  const socialImage = new URL('/assets/ogp.jpg', publicOrigin).href;
+  const socialImage = assetBasePath ? `${assetBasePath}assets/ogp.jpg` : new URL('/assets/ogp.jpg', publicOrigin).href;
+  const resourceBase = new URL(canonical);
   const headers = new Headers(asset.headers);
   headers.set('cache-control', 'no-store');
   headers.set('content-type', 'text/html; charset=utf-8');
   return new HTMLRewriter()
+    .on('html', { element(element) { if (assetBasePath) element.setAttribute('data-cms-static', 'true'); } })
+    .on('link[href]', { element(element) {
+      const rel = (element.getAttribute('rel') || '').toLowerCase().split(/\s+/);
+      if (rel.some(value => ['stylesheet', 'icon', 'apple-touch-icon', 'manifest', 'preload', 'modulepreload'].includes(value))) rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath);
+    } })
+    .on('script[src], img[src], source[src], video[poster], audio[src], track[src], input[src], iframe[src], object[data]', { element(element) {
+      for (const attribute of ['src', 'poster', 'data']) rewriteAssetAttribute(element, attribute, resourceBase, assetBasePath);
+    } })
+    .on('a[download][href]', { element(element) { rewriteAssetAttribute(element, 'href', resourceBase, assetBasePath, true); } })
     .on('[data-cms]', { element(element) { element.replace(htmlForSlot(element.getAttribute('data-cms'), data, route.slug), { html: true }); } })
     .on('[data-cms-sets-intro]', { element(element) { element.setInnerContent(setsIntro(data.pricing)); } })
     .on('[data-cms-profile-heading]', { element(element) { element.setInnerContent(`${data.creatorsBySlug.get(route.slug).title}の制作例`); } })
@@ -386,7 +421,8 @@ function localMediaPath(value, publicOrigin, sourceURL) {
   if (decoded.some(part => part === '.' || part === '..' || /[\\\u0000-\u001f\u007f]/.test(part) || /%(?:2f|5c|2e|0[0-9a-f]|1[0-9a-f]|7f)/i.test(part))) fail(`missing local media mapping for ${sourceURL}`);
   return value;
 }
-export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '', templateLoader, publicOrigin, mapMediaURL }) {
+export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '', templateLoader, publicOrigin, mapMediaURL, assetBasePath }) {
+  assetBasePath = validatedAssetBasePath(assetBasePath);
   const data = preparePublication(envelope, { cmsOrigin, teamID, siteKey, serviceBindings });
   if (typeof templateLoader !== 'function' || typeof mapMediaURL !== 'function') fail('templateLoader and mapMediaURL are required');
   const supportedCreators = new Set(['kaerunoankake', 'sensuishi13']);
@@ -410,7 +446,7 @@ export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'ke
     const route = templateFor(pathname);
     const template = await templateLoader(route.asset);
     const validatedTemplate = await validateReleaseTemplate(template, route);
-    const response = await renderDocument({ data, route, template: validatedTemplate, publicOrigin });
+    const response = await renderDocument({ data, route, template: validatedTemplate, publicOrigin, assetBasePath });
     documents[filename] = await response.text();
   }
   return documents;

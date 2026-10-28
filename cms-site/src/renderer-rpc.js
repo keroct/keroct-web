@@ -5,7 +5,7 @@ import { renderRelease } from './index.js';
 const assetsByPath = new Map(publicAssets.assets.map(asset => [asset.path, asset]));
 const revisionPattern = /^[0-9a-f]{40}$/i;
 const payloadKeys = new Set(['schemaVersion', 'envelope', 'options']);
-const optionKeys = new Set(['cmsOrigin', 'teamID', 'siteKey', 'publicOrigin', 'serviceBindings', 'mediaURLs']);
+const optionKeys = new Set(['cmsOrigin', 'teamID', 'siteKey', 'publicOrigin', 'serviceBindings', 'mediaURLs', 'assetBasePath']);
 
 function fail(message) { throw new Error(message); }
 function rejectUnknownKeys(value, allowed, label) {
@@ -88,12 +88,14 @@ export class KeroctRenderer extends WorkerEntrypoint {
     if (!this.env.CMS_ORIGIN || cmsOrigin !== this.env.CMS_ORIGIN) fail('cmsOrigin does not match this renderer');
     if (siteKey !== (this.env.CMS_SITE_KEY || 'keroct')) fail('siteKey does not match this renderer');
     const publicOrigin = safePublicOrigin(options.publicOrigin);
+    const assetBasePath = options.assetBasePath;
+    if (assetBasePath !== undefined && (typeof assetBasePath !== 'string' || !/^\/__releases\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/$/i.test(assetBasePath))) fail('assetBasePath is invalid');
     const serviceBindings = options.serviceBindings ?? '';
     if (typeof serviceBindings !== 'string') fail('serviceBindings must be text');
     const mediaURLs = options.mediaURLs;
     if (!mediaURLs || typeof mediaURLs !== 'object' || Array.isArray(mediaURLs)) fail('mediaURLs must be an object');
     const documents = await renderRelease({
-      envelope, cmsOrigin, teamID, siteKey, serviceBindings, publicOrigin,
+      envelope, cmsOrigin, teamID, siteKey, serviceBindings, publicOrigin, assetBasePath,
       templateLoader: async assetPath => {
         if (typeof assetPath !== 'string' || !assetPath.startsWith('/') || assetPath.startsWith('//')) fail('template path is invalid');
         const relativePath = assetPath.endsWith('/')
