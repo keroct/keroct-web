@@ -133,13 +133,15 @@ test('the static release renderer emits four mapped documents from an explicit e
 export default { async fetch(request, env) {
   if (request.method === 'GET') return new Response('ready');
   if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
+  let templateLoads = 0;
   try {
-  const { envelope, missingMapping } = await request.json();
+  const { envelope, missingMapping, unsupportedCreator } = await request.json();
+  if (unsupportedCreator) envelope.snapshot.creators.push({ ...envelope.snapshot.creators[0], id: 'extra-creator', slug: 'unsupported-creator', order: 9 });
     const documents = await renderRelease({ envelope, cmsOrigin: 'https://cms.example', teamID: 'team-1', publicOrigin: 'https://site.example',
-      templateLoader: async assetPath => { const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
-      mapMediaURL: url => missingMapping && url.includes('/work') ? null : '/release-media/' + url.split('/').pop() });
+      templateLoader: async assetPath => { templateLoads++; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
+      mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : '/release-media/' + url.split('/').pop(); } });
     return Response.json(documents);
-  } catch (error) { return new Response(error.message, { status: 400 }); }
+  } catch (error) { return Response.json({ error: error.message, templateLoads }, { status: 400 }); }
 } };`, 'utf8');
   writeFileSync(configFile, [
     'name = "keroct-static-release-test"', `main = "${workerFile.replaceAll('\\', '/')}"`,
@@ -157,6 +159,9 @@ export default { async fetch(request, env) {
   });
   const origin = await waitForWorker(`http://127.0.0.1:${port}/`, worker);
   const envelope = publication('release-test', 1, 'release');
+  envelope.snapshot.creators = envelope.snapshot.creators.filter(creator => creator.id !== 'creator-2');
+  envelope.snapshot.creators[0].slug = 'kaerunoankake';
+  for (const work of envelope.snapshot.works) if (work.creator === 'creator-2') work.creator = 'creator-1';
   const before = JSON.stringify(envelope);
   let response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope }), signal: AbortSignal.timeout(15000) });
   const responseBody = await response.text();
@@ -170,13 +175,22 @@ export default { async fetch(request, env) {
   assert.match(documents['index.html'], /href="https:\/\/site\.example\/"/);
   assert.match(documents['pricing/index.html'], /¥6,000/);
   assert.match(documents['pricing/index.html'], /data-cms-media/);
-  assert.match(documents['creators/kaerunoankake/index.html'], /かえるの<br>あんかけ/);
+  assert.match(documents['creators/kaerunoankake/index.html'], /Gallery intro release/);
+  assert.match(documents['creators/kaerunoankake/index.html'], /href="https:\/\/x\.com\/synthetic"/);
   assert.match(documents['creators/sensuishi13/index.html'], /Synthetic diver/);
   for (const html of Object.values(documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
   assert.equal(JSON.stringify(envelope), before);
   response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, missingMapping: true }), signal: AbortSignal.timeout(15000) });
   assert.equal(response.status, 400);
-  assert.match(await response.text(), /missing local media mapping/);
+  const missingMapping = await response.json();
+  assert.match(missingMapping.error, /missing local media mapping/);
+  const withUnsupported = JSON.parse(before);
+  withUnsupported.snapshot.creators = envelope.snapshot.creators;
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope: withUnsupported, unsupportedCreator: true }), signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 400);
+  const unsupported = await response.json();
+  assert.match(unsupported.error, /without a static template/);
+  assert.equal(unsupported.templateLoads, 0);
 });
 
 test('the Worker renders synthetic active publications and fails closed', async t => {

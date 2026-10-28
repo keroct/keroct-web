@@ -330,13 +330,16 @@ const releaseRoutes = [
 export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '', templateLoader, publicOrigin, mapMediaURL }) {
   const data = preparePublication(envelope, { cmsOrigin, teamID, siteKey, serviceBindings });
   if (typeof templateLoader !== 'function' || typeof mapMediaURL !== 'function') fail('templateLoader and mapMediaURL are required');
+  const supportedCreators = new Set(['kaerunoankake', 'sensuishi13']);
+  if (data.creators.some(creator => !supportedCreators.has(creator.slug))) fail('publication contains a creator without a static template');
+  const mediaFields = new Set(['avatarUrl', 'imageUrl', 'enlargedImageUrl']);
   const seen = new Set();
   const rewriteMedia = value => {
     if (!value || typeof value !== 'object' || seen.has(value)) return;
     seen.add(value);
     if (value instanceof Map) { for (const [key, item] of value) rewriteMedia(item); return; }
     for (const [key, item] of Object.entries(value)) {
-      if (typeof item === 'string' && /Url$/.test(key) && item) {
+      if (typeof item === 'string' && mediaFields.has(key) && item) {
         const local = mapMediaURL(item);
         if (typeof local !== 'string' || !local.startsWith('/') || local.startsWith('//') || local.includes('..')) fail(`missing local media mapping for ${item}`);
         value[key] = local;
