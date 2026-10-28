@@ -63,7 +63,7 @@ async function waitForWorker(url, child) {
     const origin = new URL(url).origin;
     const readyURL = advertisedPort ? origin.replace(/:\d+$/, `:${advertisedPort}`) : origin;
     let result;
-    try { result = await fetch(readyURL); }
+    try { result = await fetch(readyURL, { signal: AbortSignal.timeout(3000) }); }
     catch (error) { lastError = `${error.message}; ${error.cause?.message || ''}`; }
     if (result && result.status !== 503) return readyURL;
     if (result && ++unavailableResponses >= 3) return readyURL;
@@ -119,6 +119,118 @@ test('the pinned KEROCT contract artifact describes valid and invalid boundaries
   assert.deepEqual(fixtures.validBoundaries.setRevisions, [0, 2, 5, Number.MAX_SAFE_INTEGER]);
   assert.ok(fixtures.invalidBoundaries.setRevisions.includes(-1));
   assert.ok(fixtures.invalidBoundaries.categories.includes('other'));
+});
+
+test('the static release renderer emits four mapped documents from an explicit envelope', async t => {
+  const scratchRoot = path.join(cmsSite, '.wrangler');
+  mkdirSync(scratchRoot, { recursive: true });
+  const scratch = mkdtempSync(path.join(scratchRoot, 'release-renderer-'));
+  const workerFile = path.join(scratch, 'worker.mjs');
+  const configFile = path.join(scratch, 'wrangler.toml');
+  const assetDirectory = path.join(scratch, 'assets');
+  mkdirSync(path.join(assetDirectory, 'pricing'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'creators', 'kaerunoankake'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'creators', 'sensuishi13'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'scripts'), { recursive: true });
+  mkdirSync(path.join(assetDirectory, 'data'), { recursive: true });
+  for (const [source, destination] of [
+    ['index.html', 'index.html'], ['pricing/index.html', 'pricing/index.html'],
+    ['creators/kaerunoankake/index.html', 'creators/kaerunoankake/index.html'],
+    ['creators/sensuishi13/index.html', 'creators/sensuishi13/index.html'],
+  ]) copyFileSync(path.join(repo, source), path.join(assetDirectory, destination));
+  copyFileSync(path.join(repo, 'scripts/render-pricing.py'), path.join(assetDirectory, 'scripts/render-pricing.py'));
+  copyFileSync(path.join(repo, 'data/pricing.json'), path.join(assetDirectory, 'data/pricing.json'));
+  const pricingGeneration = spawnSync(process.env.PYTHON || 'python', [path.join(assetDirectory, 'scripts/render-pricing.py')], { encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
+  assert.equal(pricingGeneration.status, 0, pricingGeneration.stderr);
+  assert.match(readFileSync(path.join(assetDirectory, 'pricing/index.html'), 'utf8'), /data-cms-template="pricing"/);
+  let importPath = path.relative(scratch, path.join(cmsSite, 'src/index.js')).replaceAll('\\', '/');
+  if (!importPath.startsWith('.')) importPath = './' + importPath;
+  writeFileSync(workerFile, `import { renderRelease } from ${JSON.stringify(importPath)};
+export default { async fetch(request, env) {
+  if (request.method === 'GET') return new Response('ready');
+  if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
+  let templateLoads = 0;
+  try {
+  const { envelope, missingMapping, unsupportedCreator, mappedPath, templateOverride, swappedCreatorTemplates } = await request.json();
+  if (unsupportedCreator) envelope.snapshot.creators.push({ ...envelope.snapshot.creators[0], id: 'extra-creator', slug: 'unsupported-creator', order: 9 });
+    const documents = await renderRelease({ envelope, cmsOrigin: 'https://cms.example', teamID: 'team-1', publicOrigin: 'https://site.example',
+      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; if (swappedCreatorTemplates?.[assetPath]) return swappedCreatorTemplates[assetPath]; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
+      mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : mappedPath ?? '/release-media/' + url.split('/').pop(); } });
+    return Response.json(documents);
+  } catch (error) { return Response.json({ error: error.message, templateLoads }, { status: 400 }); }
+} };`, 'utf8');
+  writeFileSync(configFile, [
+    'name = "keroct-static-release-test"', `main = "${workerFile.replaceAll('\\', '/')}"`,
+    'compatibility_date = "2026-10-26"', 'workers_dev = true', '', '[assets]',
+    `directory = "${assetDirectory.replaceAll('\\', '/')}"`, 'binding = "ASSETS"', 'run_worker_first = true',
+  ].join('\n'));
+  const port = await freePort();
+  const persistDirectory = path.join(cmsSite, '.wrangler', 'release-renderer-state');
+  const worker = spawn(process.execPath, [path.join(cmsSite, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'dev', '--config', configFile, '--local', '--persist-to', persistDirectory, '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'info'], { cwd: cmsSite, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  worker.output = '';
+  worker.stdout.on('data', chunk => { worker.output += chunk.toString(); });
+  worker.stderr.on('data', chunk => { worker.output += chunk.toString(); });
+  t.after(async () => {
+    if (worker.pid != null && worker.exitCode === null) { const exited = once(worker, 'exit'); worker.kill(); await exited; }
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  const origin = await waitForWorker(`http://127.0.0.1:${port}/`, worker);
+  const envelope = publication('release-test', 1, 'release');
+  envelope.snapshot.creators = envelope.snapshot.creators.filter(creator => creator.id !== 'creator-2');
+  envelope.snapshot.creators[0].slug = 'kaerunoankake';
+  for (const work of envelope.snapshot.works) if (work.creator === 'creator-2') work.creator = 'creator-1';
+  const before = JSON.stringify(envelope);
+  let response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope }), signal: AbortSignal.timeout(15000) });
+  const responseBody = await response.text();
+  assert.equal(response.status, 200, `${responseBody}\n${worker.output}`);
+  const documents = JSON.parse(responseBody);
+  assert.deepEqual(Object.keys(documents).sort(), ['creators/kaerunoankake/index.html', 'creators/sensuishi13/index.html', 'index.html', 'pricing/index.html'].sort());
+  assert.match(documents['index.html'], /KEROCT release \| KEROCT造船所/);
+  assert.match(documents['index.html'], /Creator release &lt;&amp;&quot;/);
+  assert.match(documents['index.html'], /data-category="logo"/);
+  assert.match(documents['index.html'], /data-image="\/release-media\/large"/);
+  assert.match(documents['index.html'], /href="https:\/\/site\.example\/"/);
+  assert.match(documents['pricing/index.html'], /¥6,000/);
+  assert.match(documents['pricing/index.html'], /data-cms-media/);
+  assert.match(documents['creators/kaerunoankake/index.html'], /Gallery intro release/);
+  assert.match(documents['creators/kaerunoankake/index.html'], /href="https:\/\/x\.com\/synthetic"/);
+  assert.match(documents['creators/sensuishi13/index.html'], /Synthetic diver/);
+  for (const html of Object.values(documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
+  for (const html of Object.values(documents)) {
+    assert.match(html, /<meta property="og:image" content="https:\/\/site\.example\/assets\/ogp\.jpg"/);
+    assert.match(html, /<meta name="twitter:image" content="https:\/\/site\.example\/assets\/ogp\.jpg"/);
+  }
+  assert.equal(JSON.stringify(envelope), before);
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, missingMapping: true }), signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 400);
+  const missingMapping = await response.json();
+  assert.match(missingMapping.error, /missing local media mapping/);
+  const withUnsupported = JSON.parse(before);
+  withUnsupported.snapshot.creators = envelope.snapshot.creators;
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope: withUnsupported, unsupportedCreator: true }), signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 400);
+  const unsupported = await response.json();
+  assert.match(unsupported.error, /without a static template/);
+  assert.equal(unsupported.templateLoads, 0);
+  for (const mappedPath of ['/\\external.example/image.png', '/release-media/%2f%2fexternal.example/x', '/release-media/%2e%2e/private', '/release-media/%252f%252fexternal.example/x']) {
+    response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, mappedPath }), signal: AbortSignal.timeout(15000) });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /missing local media mapping/);
+  }
+  const pricingTemplate = readFileSync(path.join(repo, 'pricing/index.html'), 'utf8');
+  const homeTemplate = readFileSync(path.join(repo, 'index.html'), 'utf8');
+  for (const templateOverride of ['', pricingTemplate, homeTemplate.replace('<span data-cms="home-works"></span>', '')]) {
+    response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, templateOverride }), signal: AbortSignal.timeout(15000) });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /template/);
+  }
+  const kaeruTemplate = readFileSync(path.join(repo, 'creators/kaerunoankake/index.html'), 'utf8');
+  const sensuishiTemplate = readFileSync(path.join(repo, 'creators/sensuishi13/index.html'), 'utf8');
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, swappedCreatorTemplates: {
+    '/creators/kaerunoankake/': sensuishiTemplate, '/creators/sensuishi13/': kaeruTemplate,
+  } }), signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /template identity/);
 });
 
 test('the Worker renders synthetic active publications and fails closed', async t => {
