@@ -151,11 +151,11 @@ export default { async fetch(request, env) {
   if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
   let templateLoads = 0;
   try {
-  const { envelope, missingMapping, unsupportedCreator, mappedPath, templateOverride, swappedCreatorTemplates } = await request.json();
+  const { envelope, missingMapping, unsupportedCreator, mappedPath, templateOverride, swappedCreatorTemplates, assetBasePath } = await request.json();
   if (unsupportedCreator) envelope.snapshot.creators.push({ ...envelope.snapshot.creators[0], id: 'extra-creator', slug: 'unsupported-creator', order: 9 });
     const documents = await renderRelease({ envelope, cmsOrigin: 'https://cms.example', teamID: 'team-1', publicOrigin: 'https://site.example',
-      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; if (swappedCreatorTemplates?.[assetPath]) return swappedCreatorTemplates[assetPath]; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); return response.ok ? response.text() : null; },
-      mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : mappedPath ?? '/release-media/' + url.split('/').pop(); } });
+      templateLoader: async assetPath => { templateLoads++; if (templateOverride != null) return templateOverride; if (swappedCreatorTemplates?.[assetPath]) return swappedCreatorTemplates[assetPath]; const response = await env.ASSETS.fetch(new Request(new URL(assetPath, request.url))); if (!response.ok) return null; let html = await response.text(); if (assetBasePath) html = html.replace('</head>', '<link rel="stylesheet" href="/assets/style.css"><link rel="preload" as="font" href="/assets/fonts/ZenKakuGothicNew-Black.ttf"><meta property="og:image" content="/assets/ogp.jpg"></head>').replace('</body>', '<a href="/tools/windows/obs-tawk-quiet/Install.cmd">Tool</a><a download href="/tools/windows/obs-tawk-quiet/README.md">Download</a></body>'); return html; },
+      assetBasePath, mapMediaURL: url => { if (!url.startsWith('https://cms.example/api/public-media/team-1/')) throw new Error('unexpected non-CMS media URL'); return missingMapping && url.endsWith('/work') ? null : mappedPath ?? '/release-media/' + url.split('/').pop(); } });
     return Response.json(documents);
   } catch (error) { return Response.json({ error: error.message, templateLoads }, { status: 400 }); }
 } };`, 'utf8');
@@ -195,12 +195,35 @@ export default { async fetch(request, env) {
   assert.match(documents['creators/kaerunoankake/index.html'], /Gallery intro release/);
   assert.match(documents['creators/kaerunoankake/index.html'], /href="https:\/\/x\.com\/synthetic"/);
   assert.match(documents['creators/sensuishi13/index.html'], /Synthetic diver/);
+  for (const html of Object.values(documents)) assert.match(html, /data-cms-static="true"/, 'renderRelease output is static even without an asset prefix');
   for (const html of Object.values(documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
   for (const html of Object.values(documents)) {
     assert.match(html, /<meta property="og:image" content="https:\/\/site\.example\/assets\/ogp\.jpg"/);
     assert.match(html, /<meta name="twitter:image" content="https:\/\/site\.example\/assets\/ogp\.jpg"/);
   }
   assert.equal(JSON.stringify(envelope), before);
+  const releasePrefix = '/__releases/2cb8c2a1-fd03-4f22-b651-4bb00ec65466/';
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, assetBasePath: releasePrefix }), signal: AbortSignal.timeout(15000) });
+  const staticResponseText = await response.text();
+  assert.equal(response.status, 200, staticResponseText);
+  const staticDocuments = JSON.parse(staticResponseText);
+  for (const html of Object.values(staticDocuments)) {
+    assert.match(html, /data-cms-static="true"/);
+    assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/style\.css"/);
+    assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/fonts\/ZenKakuGothicNew-Black\.ttf"/);
+    assert.match(html, /src="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/site-config\.js\?v=chat-1"/);
+    assert.match(html, /<meta property="og:image" content="https:\/\/site\.example\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg"/);
+    assert.match(html, /<meta name="twitter:image" content="https:\/\/site\.example\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg"/);
+    assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/tools\/windows\/obs-tawk-quiet\/Install\.cmd"/);
+    assert.match(html, /href="\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/tools\/windows\/obs-tawk-quiet\/README\.md"/);
+    assert.match(html, /href="https:\/\/site\.example\//);
+    assert.doesNotMatch(html, /href="\/__releases[^"]*(?:pricing|creators)/);
+  }
+  assert.match(staticDocuments['index.html'], /data-image="\/release-media\/large"/);
+  assert.match(staticDocuments['index.html'], /href="pricing\/"/);
+  response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, assetBasePath: '/__releases/not-a-uuid/' }), signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /assetBasePath is invalid/);
   response = await fetch(origin, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ envelope, missingMapping: true }), signal: AbortSignal.timeout(15000) });
   assert.equal(response.status, 400);
   const missingMapping = await response.json();
@@ -652,6 +675,7 @@ test('failed CMS images on one page cause at most one guarded reload per 30 seco
   let reloads = 0;
   const storage = new Map();
   const document = {
+    documentElement: { dataset: {} },
     body: { appendChild() {} },
     addEventListener() {},
     querySelector() { return null; },
@@ -680,4 +704,16 @@ test('failed CMS images on one page cause at most one guarded reload per 30 seco
   }
   assert.equal(reloads, 1, 'subsequent errors remain guarded');
   assert.deepEqual([...storage.keys()], ['keroct-cms-media-reload:/pricing/']);
+
+  let staticReloads = 0;
+  const staticImages = [{ hasAttribute() { return true; }, dataset: {}, src: '/media/old.jpg', listeners: {}, classList: { add() {} }, addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); } }];
+  document.documentElement.dataset.cmsStatic = 'true';
+  document.querySelectorAll = selector => selector === '.work-image img' || selector === 'img[data-cms-media]' ? staticImages : [];
+  runInNewContext(readFileSync(path.join(repo, 'assets/site.js'), 'utf8'), {
+    document, window: { KEROCT_CONFIG: {} }, localStorage: { getItem() { return null; } }, sessionStorage,
+    location: { pathname: '/pricing/', href: 'https://site.test/pricing/', reload() { staticReloads++; } }, URL,
+  });
+  for (const listener of staticImages[0].listeners.error) listener();
+  assert.equal(staticReloads, 0, 'static media failures do not reload the page');
+  assert.equal(staticImages[0].alt, '画像を読み込めませんでした。');
 });

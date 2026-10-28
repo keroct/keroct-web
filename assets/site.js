@@ -101,6 +101,7 @@ document.querySelectorAll('[data-contact]').forEach(button => button.addEventLis
   catch { content.textContent = '相談窓口を読み込めませんでした。時間をおいて再度お試しください。'; }
 }));
 function recoverCmsMedia(image) {
+  if (document.documentElement.dataset.cmsStatic === 'true') return;
   if (!image.hasAttribute('data-cms-media') || image.dataset.recoveryChecked) return;
   image.dataset.recoveryChecked = 'true';
   try {

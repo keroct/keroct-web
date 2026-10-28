@@ -79,13 +79,15 @@ export default { async fetch(request,env) { if(new URL(request.url).pathname.sta
   assert.equal(response.status, 200, child.output); assert.equal(response.headers.get('content-type'), 'font/ttf'); assert.equal(response.headers.get('x-content-type-options'), 'nosniff'); assert.equal((await response.arrayBuffer()).byteLength, 1024 * 1024 + 37);
   for (const path of ['/assets/ogp.jpg', '../index.html', 'assets/%2e%2e/index.html', 'unknown.txt']) { response = await call('/rpc/asset', { path, version: listed.rendererVersion }); assert.ok(response.status >= 400, `accepted path ${path}`); }
   response = await call('/rpc/asset', { path: 'index.html', version: 'keroct-renderer-v1:stale' }); assert.ok(response.status >= 400);
-  const request = { schemaVersion: 1, envelope: publication, options: { cmsOrigin: 'https://cms.example', teamID: 'team-1', siteKey: 'keroct', publicOrigin: 'https://site.example', serviceBindings: '', mediaURLs: { 'https://cms.example/api/public-media/team-1/rpc/work': '/media/work.jpg' } } };
+  const request = { schemaVersion: 1, envelope: publication, options: { cmsOrigin: 'https://cms.example', teamID: 'team-1', siteKey: 'keroct', publicOrigin: 'https://site.example', serviceBindings: '', assetBasePath: '/__releases/2cb8c2a1-fd03-4f22-b651-4bb00ec65466/', mediaURLs: { 'https://cms.example/api/public-media/team-1/rpc/work': '/media/work.jpg' } } };
   const versionHeader = { 'x-renderer-version': listed.rendererVersion };
   response = await call('/rpc/render', request, versionHeader); const responseText = await response.text(); assert.equal(response.status, 200, `${responseText}\n${child.output}`);
   const rendered = JSON.parse(responseText); assert.equal(rendered.rendererVersion, listed.rendererVersion); assert.equal(rendered.codeRevision, sha);
   assert.deepEqual(Object.keys(rendered.documents).sort(), ['creators/kaerunoankake/index.html', 'creators/sensuishi13/index.html', 'index.html', 'pricing/index.html'].sort());
   assert.match(rendered.documents['index.html'], /Synthetic creator/); assert.match(rendered.documents['pricing/index.html'], /¥6,000/);
+  assert.match(rendered.documents['index.html'], /data-cms-static="true"/);
   for (const html of Object.values(rendered.documents)) assert.doesNotMatch(html, /https:\/\/cms\.example\/api\/public-media/);
+  response = await call('/rpc/render', { ...request, options: { ...request.options, assetBasePath: '/__releases/../../' } }, versionHeader); assert.ok(response.status >= 400, 'unsafe release path rejected');
   response = await call('/rpc/render', { ...request, options: { ...request.options, teamID: 'team-2' } }, versionHeader); assert.ok(response.status >= 400);
   response = await call('/rpc/render', request, { 'x-renderer-version': 'keroct-renderer-v1:stale' }); assert.ok(response.status >= 400);
   response = await call('/renderer-public-fetch'); assert.ok(response.status >= 400, 'renderer default fetch must not expose private RPC methods');
