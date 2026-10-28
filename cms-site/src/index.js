@@ -8,16 +8,35 @@ function validatedAssetBasePath(value) {
   if (typeof value !== 'string' || !releasePathPattern.test(value)) fail('assetBasePath is invalid');
   return value;
 }
-function versionedAssetURL(value, baseURL, assetBasePath, allowHTML = false) {
-  if (!assetBasePath || typeof value !== 'string' || !value || value.startsWith('//')) return null;
+function resolvedPublicURL(value, baseURL) {
+  if (typeof value !== 'string' || !value || value.startsWith('//')) return null;
   let resolved;
   try { resolved = new URL(value, baseURL); } catch { return null; }
   if (resolved.origin !== baseURL.origin || resolved.username || resolved.password) return null;
-  const pathname = resolved.pathname;
-  if (/%[0-9a-f]{2}/i.test(pathname)) return null;
-  const assetPath = pathname.replace(/^\//, '');
-  const asset = publicAssetsByPath.get(assetPath);
-  if (!publicAssetPaths.has(assetPath) || (!allowHTML && asset?.contentType === 'text/html')) return null;
+  if (/%[0-9a-f]{2}/i.test(resolved.pathname)) return null;
+  const legacyPrefix = value.startsWith('/keroct-web/') && resolved.pathname.startsWith('/keroct-web/');
+  if (legacyPrefix) resolved.pathname = resolved.pathname.slice('/keroct-web'.length);
+  return { resolved, legacyPrefix };
+}
+function manifestAssetForURL(resolved) {
+  const assetPath = resolved.pathname.replace(/^\//, '').replace(/\/$/, '');
+  let asset = publicAssetsByPath.get(assetPath);
+  let canonicalPath = resolved.pathname;
+  if (!asset && (resolved.pathname === '/' || resolved.pathname.endsWith('/'))) {
+    const indexPath = `${assetPath}${assetPath ? '/' : ''}index.html`;
+    asset = publicAssetsByPath.get(indexPath);
+    if (asset) canonicalPath = resolved.pathname.endsWith('/') ? resolved.pathname : `${resolved.pathname}/`;
+  }
+  return asset ? { asset, canonicalPath } : null;
+}
+function versionedAssetURL(value, baseURL, assetBasePath, allowHTML = false) {
+  if (!assetBasePath) return null;
+  const target = resolvedPublicURL(value, baseURL);
+  if (!target) return null;
+  const { resolved } = target;
+  const manifestAsset = manifestAssetForURL(resolved);
+  if (!manifestAsset || !publicAssetPaths.has(manifestAsset.asset.path) || (!allowHTML && manifestAsset.asset.contentType === 'text/html')) return null;
+  const assetPath = manifestAsset.asset.path;
   return `${assetBasePath}${assetPath}${resolved.search}${resolved.hash}`;
 }
 function rewriteAssetAttribute(element, attribute, baseURL, assetBasePath, allowHTML = false) {
@@ -34,8 +53,22 @@ function rewriteStaticAssetReferences(rewriter, baseURL, assetBasePath) {
     .on('script[src], img[src], source[src], video[poster], audio[src], track[src], input[src], iframe[src], object[data]', { element(element) {
       for (const attribute of ['src', 'poster', 'data']) rewriteAssetAttribute(element, attribute, baseURL, assetBasePath);
     } })
-    .on('a[href]', { element(element) { rewriteAssetAttribute(element, 'href', baseURL, assetBasePath); } })
-    .on('a[download][href]', { element(element) { rewriteAssetAttribute(element, 'href', baseURL, assetBasePath, true); } });
+    .on('a[href]', { element(element) {
+      const value = element.getAttribute('href');
+      if (element.getAttribute('download') != null) {
+        rewriteAssetAttribute(element, 'href', baseURL, assetBasePath, true);
+        return;
+      }
+      const target = resolvedPublicURL(value, baseURL);
+      if (target?.legacyPrefix) {
+        const manifestAsset = manifestAssetForURL(target.resolved);
+        if (manifestAsset?.asset.contentType === 'text/html') {
+          element.setAttribute('href', `${manifestAsset.canonicalPath}${target.resolved.search}${target.resolved.hash}`);
+          return;
+        }
+      }
+      rewriteAssetAttribute(element, 'href', baseURL, assetBasePath);
+    } });
 }
 const genericFailure = `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ページを表示できません</title><body><main><h1>ページを表示できません</h1><p>公開内容を読み込めませんでした。時間をおいて再度お試しください。</p></main></body></html>`;
 const mediaPrefix = '/api/public-media/';

@@ -64,13 +64,18 @@ test('private renderer RPC uses two local Workers for versioned asset streaming 
     '<meta property="og:url" content="https://old.example/old">',
     '<meta name="twitter:url" content="https://old.example/old">',
     '<meta property="og:image" content="/assets/ogp.jpg">',
-    '<link rel="stylesheet" href="/assets/css/style.css?v=contract">',
-    '<script src="/assets/site.js"></script></head><body>',
+    '<link rel="stylesheet" href="/keroct-web/assets/css/style.css?v=f2460123456789abcdef0123456789abcdef0123">',
+    '<script src="/keroct-web/assets/site.js"></script></head><body>',
     '<main>Auxiliary package page preserved</main>',
-    '<a href="/tools/windows/obs-tawk-quiet/VERIFICATION.html">Verification page</a>',
-    '<a download href="/tools/windows/obs-tawk-quiet/VERIFICATION.html">Download verification page</a>',
-    '<a download href="/tools/windows/obs-tawk-quiet/Install.cmd">Install command</a>',
+    '<a href="/keroct-web/tools/windows/obs-tawk-quiet/">Verification page</a>',
+    '<a download href="/keroct-web/tools/windows/obs-tawk-quiet/VERIFICATION.html">Download verification page</a>',
+    '<a download href="/keroct-web/tools/windows/obs-tawk-quiet/Install.cmd">Install command</a>',
     '<a href="https://external.example/help">External help</a>',
+    '<a href="/keroct-web-evil/assets/site.js">Boundary lookalike</a>',
+    '<a href="https://foreign.example/keroct-web/assets/site.js">Foreign URL</a>',
+    '<a href="//site.example/keroct-web/assets/site.js">Protocol-relative URL</a>',
+    '<a href="/%6beroct-web/assets/site.js">Encoded prefix</a>',
+    '<a href="/keroct-web/not-in-manifest.js">Unknown legacy path</a>',
     '</body></html>',
   ].join(''));
   writeFileSync(verificationPage, [
@@ -122,13 +127,20 @@ export default { async fetch(request,env) { if(new URL(request.url).pathname.sta
   assert.match(auxiliaryHTML, /href="https:\/\/site\.example\/tools\/windows\/obs-tawk-quiet\/"/);
   assert.match(auxiliaryHTML, /property="og:url" content="https:\/\/site\.example\/tools\/windows\/obs-tawk-quiet\/"/);
   assert.match(auxiliaryHTML, /name="twitter:url" content="https:\/\/site\.example\/tools\/windows\/obs-tawk-quiet\/"/);
-  assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}assets/css/style.css?v=contract"`));
+  assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}assets/css/style.css?v=f2460123456789abcdef0123456789abcdef0123"`));
   assert.ok(auxiliaryHTML.includes(`src="${releasePrefix}assets/site.js"`));
   assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/Install.cmd"`));
-  assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/VERIFICATION.html"`), 'HTML downloads may use the release-pinned path');
-  assert.ok(auxiliaryHTML.includes('href="/tools/windows/obs-tawk-quiet/VERIFICATION.html"'), 'ordinary HTML navigation stays on its active path');
+  assert.ok(auxiliaryHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/VERIFICATION.html"`), 'legacy-prefixed HTML downloads may use the release-pinned path');
+  assert.ok(auxiliaryHTML.includes('href="/tools/windows/obs-tawk-quiet/"'), 'legacy directory navigation stays on its active path');
   assert.ok(auxiliaryHTML.includes('href="https://external.example/help"'), 'external navigation stays unchanged');
   assert.ok(auxiliaryHTML.includes(`content="https://site.example${releasePrefix}assets/ogp.jpg"`));
+  for (const unchanged of [
+    'href="/keroct-web-evil/assets/site.js"',
+    'href="https://foreign.example/keroct-web/assets/site.js"',
+    'href="//site.example/keroct-web/assets/site.js"',
+    'href="/%6beroct-web/assets/site.js"',
+    'href="/keroct-web/not-in-manifest.js"',
+  ]) assert.ok(auxiliaryHTML.includes(unchanged), `unsupported legacy-looking URL changed: ${unchanged}`);
   assert.match(verificationHTML, /Verification body stays intact/);
   assert.ok(verificationHTML.includes(`href="${releasePrefix}assets/css/style.css?v=relative"`));
   assert.ok(verificationHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/Install.cmd"`));
