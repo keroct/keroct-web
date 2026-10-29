@@ -218,6 +218,7 @@ export default { async fetch(request,env) { if(new URL(request.url).pathname.sta
 
 test('public asset manifest matches the exact Pages selector paths', () => {
   assert.equal(manifest.assets.length, 43);
+  assert.doesNotMatch(readFileSync(path.join(repo, 'assets/style.css'), 'utf8'), /url\(/, 'the current stylesheet has no CSS-internal URL references');
   assert.equal(new Set(manifest.assets.map(asset => asset.path)).size, 43);
   const python = [
     'import ast, json, pathlib, sys',
