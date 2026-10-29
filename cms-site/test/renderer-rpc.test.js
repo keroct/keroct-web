@@ -95,7 +95,7 @@ return new Response('not found',{status:404}); } catch(e) { return Response.json
 export default { async fetch(request,env) { if(new URL(request.url).pathname.startsWith('/rpc/')) return env.RPC_PROXY.get(env.RPC_PROXY.idFromName('test')).fetch(request); return env.ASSETS.fetch(request); } };`);
   const slashes = value => value.replaceAll('\\', '/');
   const sha = '0123456789abcdef0123456789abcdef01234567';
-  writeFileSync(rendererConfig, ['name = "keroct-renderer-rpc-test"', `main = "${slashes(path.join(cmsSite, 'src/worker.js'))}"`, 'compatibility_date = "2026-10-26"', 'compatibility_flags = ["nodejs_compat"]', 'workers_dev = true', '', '[version_metadata]', 'binding = "CF_VERSION_METADATA"', '', '[assets]', `directory = "${slashes(assets)}"`, 'binding = "ASSETS"', 'run_worker_first = true', '', '[vars]', 'CMS_TEAM_ID = "team-1"', 'CMS_ORIGIN = "https://cms.example"', 'CMS_SITE_KEY = "keroct"', `RENDERER_CODE_SHA = "${sha}"`].join('\n'));
+  writeFileSync(rendererConfig, ['name = "keroct-renderer-rpc-test"', `main = "${slashes(path.join(cmsSite, 'src/worker.js'))}"`, 'compatibility_date = "2026-10-26"', 'compatibility_flags = ["nodejs_compat"]', 'workers_dev = true', '', '[version_metadata]', 'binding = "CF_VERSION_METADATA"', '', '[assets]', `directory = "${slashes(assets)}"`, 'binding = "ASSETS"', 'run_worker_first = true', '', '[vars]', 'CMS_TEAM_ID = "team-1"', 'CMS_ORIGIN = "https://cms.example"', 'CMS_SITE_KEY = "keroct"', 'CMS_SITE_ID = "2cb8c2a1-fd03-4f22-b651-4bb00ec65466"', `RENDERER_CODE_SHA = "${sha}"`].join('\n'));
   writeFileSync(clientConfig, ['name = "keroct-renderer-rpc-client-test"', `main = "${slashes(clientFile)}"`, 'compatibility_date = "2026-10-26"', 'compatibility_flags = ["nodejs_compat"]', 'workers_dev = true', '', '[[durable_objects.bindings]]', 'name = "RPC_PROXY"', 'class_name = "RpcProxy"', '', '[[migrations]]', 'tag = "v1"', 'new_sqlite_classes = ["RpcProxy"]', '', '[[services]]', 'binding = "RENDERER"', 'service = "keroct-renderer-rpc-test"', 'entrypoint = "KeroctRenderer"', '', '[[services]]', 'binding = "RENDERER_PUBLIC"', 'service = "keroct-renderer-rpc-test"', '', '[assets]', `directory = "${slashes(assets)}"`, 'binding = "ASSETS"', 'run_worker_first = true'].join('\n'));
   const port = await freePort(); const persist = path.join(cmsSite, '.wrangler', 'renderer-rpc-state');
   const child = spawn(process.execPath, [path.join(cmsSite, 'node_modules/wrangler/bin/wrangler.js'), 'dev', '--config', clientConfig, '--config', rendererConfig, '--local', '--persist-to', persist, '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'info'], { cwd: cmsSite, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -112,7 +112,7 @@ export default { async fetch(request,env) { if(new URL(request.url).pathname.sta
   const request = { schemaVersion: 1, envelope: publication, options: { cmsOrigin: 'https://cms.example', teamID: 'team-1', siteKey: 'keroct', publicOrigin: 'https://site.example', serviceBindings: '', assetBasePath: '/__releases/2cb8c2a1-fd03-4f22-b651-4bb00ec65466/', mediaURLs: { 'https://cms.example/api/public-media/team-1/rpc/work': '/media/work.jpg' } } };
   const versionHeader = { 'x-renderer-version': listed.rendererVersion };
   response = await call('/rpc/render', request, versionHeader); const responseText = await response.text(); assert.equal(response.status, 200, `${responseText}\n${child.output}`);
-  const rendered = JSON.parse(responseText); assert.equal(rendered.rendererVersion, listed.rendererVersion); assert.equal(rendered.codeRevision, sha);
+  const rendered = JSON.parse(responseText); assert.equal(rendered.schemaVersion, 1); assert.equal(rendered.rendererVersion, listed.rendererVersion); assert.equal(rendered.codeRevision, sha);
   const auxiliaryIndex = 'tools/windows/obs-tawk-quiet/index.html';
   const verificationPath = 'tools/windows/obs-tawk-quiet/VERIFICATION.html';
   assert.deepEqual(Object.keys(rendered.documents).sort(), ['creators/kaerunoankake/index.html', 'creators/sensuishi13/index.html', 'index.html', 'pricing/index.html', auxiliaryIndex, verificationPath].sort());
@@ -141,6 +141,72 @@ export default { async fetch(request,env) { if(new URL(request.url).pathname.sta
     'href="/%6beroct-web/assets/site.js"',
     'href="/keroct-web/not-in-manifest.js"',
   ]) assert.ok(auxiliaryHTML.includes(unchanged), `unsupported legacy-looking URL changed: ${unchanged}`);
+  const v2Request = { schemaVersion: 2, envelope: publication, options: {
+    cmsOrigin: 'https://cms.example', teamID: 'team-1', siteKey: 'keroct', siteID: '2cb8c2a1-fd03-4f22-b651-4bb00ec65466',
+    publicBaseURL: 'https://site.example/keroct/', serviceBindings: '', mediaURLs: {
+      'https://cms.example/api/public-media/team-1/rpc/work': `${releasePrefix}media/work.jpg`,
+    }, assetBasePath: releasePrefix,
+  } };
+  response = await call('/rpc/render', v2Request, versionHeader);
+  const v2Text = await response.text(); assert.equal(response.status, 200, `${v2Text}\n${child.output}`);
+  const v2 = JSON.parse(v2Text); assert.equal(v2.schemaVersion, 2);
+  assert.equal(Object.keys(v2.documents).length, 6);
+  for (const [filename, html] of Object.entries(v2.documents)) {
+    assert.match(html, /data-myhaco-site-id="2cb8c2a1-fd03-4f22-b651-4bb00ec65466"/);
+    assert.equal([...html.matchAll(/<base\b[^>]*data-myhaco-site-root/g)].length, 1, `${filename} has one site root base: ${html.slice(0, 800)}`);
+    const routePath = filename.endsWith('/index.html') ? `/${filename.slice(0, -'index.html'.length)}` : `/${filename}`;
+    for (const endpoint of ['https://site.example/keroct/', 'https://custom.test/']) {
+      const documentURL = new URL(routePath.replace(/^\//, ''), endpoint);
+      const baseHref = /<base\b[^>]*data-myhaco-site-root[^>]*href="([^"]+)"/.exec(html)?.[1];
+      assert.ok(baseHref);
+      const baseURL = new URL(baseHref, documentURL);
+      for (const [, raw] of html.matchAll(/(?:href|src|poster|data|data-image)="([^"]+)"/g)) {
+        if (!raw || raw === baseHref || raw.startsWith('#') || raw.startsWith('//') || /^[a-z]+:/i.test(raw)) continue;
+        const resolved = new URL(raw, baseURL);
+        assert.equal(resolved.origin, new URL(endpoint).origin, `${filename} escaped its host: ${raw}`);
+        assert.ok(resolved.pathname.startsWith(new URL(endpoint).pathname), `${filename} escaped its mount ${new URL(endpoint).pathname}: ${raw} -> ${resolved.pathname}; base ${baseHref} resolved ${baseURL}`);
+      }
+    }
+  }
+  for (const [filename, html] of Object.entries(v2.documents)) {
+    const retainedDocument = html.replace(/(<base\b[^>]*data-myhaco-site-root[^>]*href=")[^"]+/, '$1/keroct/');
+    const retainedBase = /<base\b[^>]*data-myhaco-site-root[^>]*href="([^"]+)"/.exec(retainedDocument)?.[1];
+    const relativePath = filename === 'index.html' ? '' : filename.endsWith('/index.html') ? filename.slice(0, -'index.html'.length) : filename;
+    const retainedURL = new URL(relativePath, `https://site.example${releasePrefix}`);
+    for (const [, raw] of retainedDocument.matchAll(/(?:href|src|poster|data|data-image)="([^"]+)"/g)) {
+      if (!raw || raw === retainedBase || raw.startsWith('#') || raw.startsWith('//') || /^[a-z]+:/i.test(raw)) continue;
+      assert.ok(new URL(raw, new URL(retainedBase, retainedURL)).pathname.startsWith('/keroct/'), `${filename} retained doc escaped active endpoint: ${raw}`);
+    }
+  }
+  assert.match(v2.documents['index.html'], /href="pricing\/"/);
+  assert.match(v2.documents['index.html'], /src="__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/site\.js"/);
+  assert.match(v2.documents['index.html'], /data-image="__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/media\/work\.jpg"/);
+  assert.match(v2.documents['index.html'], /property="og:url" content="https:\/\/site\.example\/keroct\/"/);
+  assert.match(v2.documents['index.html'], /property="og:image" content="https:\/\/site\.example\/keroct\/__releases\/2cb8c2a1-fd03-4f22-b651-4bb00ec65466\/assets\/ogp\.jpg"/);
+  for (const unsafe of [
+    'https://site.example/keroct/../other/', 'https://site.example/%2fother/', 'https://site.example/keroct/?q=1', 'https://user@site.example/keroct/',
+    'https://site.example/Keroct/', 'https://site.example/keroct//', 'https://site.example', 'http://site.example/keroct/',
+  ]) {
+    response = await call('/rpc/render', { ...v2Request, options: { ...v2Request.options, publicBaseURL: unsafe } }, versionHeader);
+    assert.ok(response.status >= 400, `unsafe publicBaseURL accepted: ${unsafe}`);
+  }
+  response = await call('/rpc/render', { ...v2Request, options: { ...v2Request.options, publicBaseURL: 'http://127.0.0.1/keroct/' } }, versionHeader);
+  assert.equal(response.status, 200, 'loopback HTTP is accepted for local rendering');
+  response = await call('/rpc/render', { ...v2Request, options: { ...v2Request.options, publicBaseURL: 'https://custom.test/' } }, versionHeader);
+  assert.equal(response.status, 200, 'root-mounted HTTPS site is accepted');
+  for (const invalid of [
+    { siteID: '2cb8c2a1-fd03-4f22-b651-4bb00ec65467' },
+    { mediaURLs: { ...v2Request.options.mediaURLs, extra: '/media/outside.jpg' } },
+    { mediaURLs: { ...v2Request.options.mediaURLs, extra: `${releasePrefix}../outside.jpg` } },
+  ]) {
+    response = await call('/rpc/render', { ...v2Request, options: { ...v2Request.options, ...invalid } }, versionHeader);
+    assert.ok(response.status >= 400, 'invalid v2 options rejected');
+  }
+  response = await call('/rpc/render', { ...v2Request, options: { ...v2Request.options, extra: true } }, versionHeader); assert.ok(response.status >= 400, 'unknown v2 option rejected');
+  response = await call('/rpc/render', { ...v2Request, options: { ...v2Request.options, siteID: undefined } }, versionHeader); assert.ok(response.status >= 400, 'missing v2 site ID rejected');
+  writeFileSync(auxiliaryHome, readFileSync(auxiliaryHome, 'utf8').replace('<head>', '<head><base href="/">'));
+  response = await call('/rpc/render', v2Request, versionHeader);
+  assert.ok(response.status >= 400, 'v2 rejects a source template base element');
   assert.match(verificationHTML, /Verification body stays intact/);
   assert.ok(verificationHTML.includes(`href="${releasePrefix}assets/css/style.css?v=relative"`));
   assert.ok(verificationHTML.includes(`href="${releasePrefix}tools/windows/obs-tawk-quiet/Install.cmd"`));

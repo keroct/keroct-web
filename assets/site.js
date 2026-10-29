@@ -1,12 +1,15 @@
 'use strict';
 const themeButton = document.querySelector('.theme-toggle');
-try { const savedTheme = localStorage.getItem('keroct-theme'); if (savedTheme === 'dark' || savedTheme === 'light') document.documentElement.dataset.theme = savedTheme; } catch {}
+const siteID = document.documentElement.getAttribute?.('data-myhaco-site-id');
+const validSiteID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(siteID || '');
+const themeStorageKey = siteID == null ? 'keroct-theme' : validSiteID ? `keroct-theme:${siteID}` : null;
+try { const savedTheme = themeStorageKey && localStorage.getItem(themeStorageKey); if (savedTheme === 'dark' || savedTheme === 'light') document.documentElement.dataset.theme = savedTheme; } catch {}
 function isDark() { return document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
 themeButton?.setAttribute('aria-pressed', String(isDark()));
 themeButton?.addEventListener('click', () => {
   const next = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = next;
   themeButton.setAttribute('aria-pressed', String(next === 'dark'));
-  try { localStorage.setItem('keroct-theme', next); } catch {}
+  try { if (themeStorageKey) localStorage.setItem(themeStorageKey, next); } catch {}
 });
 const menu = document.querySelector('.menu-toggle');
 const navigation = document.querySelector('#navigation');
@@ -106,7 +109,8 @@ function recoverCmsMedia(image) {
   image.dataset.recoveryChecked = 'true';
   try {
     const path = new URL(image.src, location.href).pathname;
-    const key = `keroct-cms-media-reload:${location.pathname}`;
+    const key = siteID == null ? `keroct-cms-media-reload:${location.pathname}` : validSiteID ? `keroct-cms-media-reload:${siteID}:${location.pathname}` : null;
+    if (!key) return;
     const lastReload = Number(sessionStorage.getItem(key) || 0);
     if (Date.now() - lastReload < 30000) return;
     sessionStorage.setItem(key, String(Date.now()));
