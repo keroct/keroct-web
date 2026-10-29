@@ -363,21 +363,60 @@ export function preparePublication(envelope, { cmsOrigin, teamID, siteKey = 'ker
   return data;
 }
 
-export async function renderDocument({ data, route, template, publicOrigin, assetBasePath, staticMode = false }) {
+function relativeURL(fromDocumentPath, targetPath) {
+  const fromParts = fromDocumentPath.split('/').filter(Boolean);
+  if (!fromDocumentPath.endsWith('/')) fromParts.pop();
+  const targetParts = targetPath.split('/').filter(Boolean);
+  while (fromParts.length && targetParts.length && fromParts[0] === targetParts[0]) { fromParts.shift(); targetParts.shift(); }
+  const relative = `${'../'.repeat(fromParts.length)}${targetParts.join('/')}`;
+  return targetPath.endsWith('/') && relative && !relative.endsWith('/') ? `${relative}/` : relative || './';
+}
+function siteRootRelative(pathname) {
+  return pathname === '/' ? './' : pathname.replace(/^\//, '');
+}
+async function assertNoBaseElement(template, label) {
+  let count = 0;
+  await new HTMLRewriter().on('base', { element() { count++; } }).transform(new Response(template)).text();
+  if (count) fail(`${label} must not include a base element`);
+}
+function rewriteV2References(response, documentPath) {
+  const resourceBase = new URL(documentPath, 'https://site-relative.invalid');
+  return new HTMLRewriter()
+    .on('a[href], link[href], script[src], img[src], source[src], video[poster], audio[src], track[src], input[src], iframe[src], object[data], [data-image]', { element(element) {
+      for (const attribute of ['href', 'src', 'poster', 'data', 'data-image']) {
+        const value = element.getAttribute(attribute);
+        if (!value || /^[a-z]+:/i.test(value) || value.startsWith('//')) continue;
+        if (value.startsWith('#')) {
+          element.setAttribute(attribute, `${siteRootRelative(documentPath)}${value}`);
+          continue;
+        }
+        const resolved = new URL(value, resourceBase);
+        if (resolved.origin !== resourceBase.origin || resolved.pathname.startsWith('/api/')) continue;
+        element.setAttribute(attribute, `${siteRootRelative(resolved.pathname)}${resolved.search}${resolved.hash}`);
+      }
+    } })
+    .transform(response);
+}
+export async function renderDocument({ data, route, template, publicOrigin, assetBasePath, staticMode = false, publicPath = '/', siteID, schemaVersion = 1 }) {
   assetBasePath = validatedAssetBasePath(assetBasePath);
   const asset = new Response(template, { headers: { 'content-type': 'text/html; charset=utf-8' } });
-  const canonical = `${new URL(publicOrigin).origin}${route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/'}`;
-  const socialImage = assetBasePath ? new URL(`${assetBasePath}assets/ogp.jpg`, publicOrigin).href : new URL('/assets/ogp.jpg', publicOrigin).href;
-  const resourceBase = new URL(canonical);
+  const logicalRoute = route.kind === 'creator' ? `/creators/${encodeURIComponent(route.slug)}/` : route.kind === 'pricing' ? '/pricing/' : '/';
+  const canonicalPath = `${publicPath === '/' ? '' : publicPath.slice(0, -1)}${logicalRoute}`;
+  const canonical = `${new URL(publicOrigin).origin}${canonicalPath}`;
+  const socialImagePath = assetBasePath ? `${assetBasePath}assets/ogp.jpg` : '/assets/ogp.jpg';
+  const socialImage = new URL(`${schemaVersion === 2 && publicPath !== '/' ? publicPath.slice(0, -1) : ''}${socialImagePath}`, publicOrigin).href;
+  const resourceBase = schemaVersion === 2 ? new URL(logicalRoute, 'https://site-relative.invalid') : new URL(canonical);
   const headers = new Headers(asset.headers);
   headers.set('cache-control', 'no-store');
   headers.set('content-type', 'text/html; charset=utf-8');
   const rewriter = rewriteStaticAssetReferences(
-    new HTMLRewriter().on('html', { element(element) { if (staticMode) element.setAttribute('data-cms-static', 'true'); } }),
+    new HTMLRewriter().on('html', { element(element) { if (staticMode) element.setAttribute('data-cms-static', 'true'); if (siteID) element.setAttribute('data-myhaco-site-id', siteID); } }),
     resourceBase,
     assetBasePath,
   );
-  return rewriter
+  if (schemaVersion === 2) await assertNoBaseElement(template, 'v2 template');
+  const rendered = rewriter
+    .on('head', { element(element) { if (schemaVersion === 2) element.prepend(`<base data-myhaco-site-root href="${relativeURL(logicalRoute, '/')}">`, { html: true }); } })
     .on('[data-cms]', { element(element) { element.replace(htmlForSlot(element.getAttribute('data-cms'), data, route.slug), { html: true }); } })
     .on('[data-cms-sets-intro]', { element(element) { element.setInnerContent(setsIntro(data.pricing)); } })
     .on('[data-cms-profile-heading]', { element(element) { element.setInnerContent(`${data.creatorsBySlug.get(route.slug).title}の制作例`); } })
@@ -401,6 +440,7 @@ export async function renderDocument({ data, route, template, publicOrigin, asse
     .on('meta[name="description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
     .on('meta[property="og:description"]', { element(element) { if (headDescription(data, route)) element.setAttribute('content', headDescription(data, route)); } })
     .transform(new Response(asset.body, { status: asset.status, headers }));
+  return schemaVersion === 2 ? rewriteV2References(rendered, logicalRoute) : rendered;
 }
 
 const releaseRoutes = [
@@ -413,7 +453,7 @@ export const auxiliaryHTMLPaths = publicAssets.assets
   .filter(asset => asset.contentType === 'text/html' && !releaseDocumentPaths.has(asset.path))
   .map(asset => asset.path);
 const auxiliaryHTMLPathSet = new Set(auxiliaryHTMLPaths);
-export async function renderAuxiliaryDocument({ filename, template, publicOrigin, assetBasePath }) {
+export async function renderAuxiliaryDocument({ filename, template, publicOrigin, publicPath = '/', siteID, schemaVersion = 1, assetBasePath }) {
   if (!auxiliaryHTMLPathSet.has(filename)) fail('auxiliary HTML path is not in the public asset manifest');
   if (typeof template !== 'string' || !template.trim()) fail('auxiliary HTML template is empty');
   let origin;
@@ -422,21 +462,26 @@ export async function renderAuxiliaryDocument({ filename, template, publicOrigin
   assetBasePath = validatedAssetBasePath(assetBasePath);
   if (!assetBasePath) fail('assetBasePath is required for auxiliary HTML');
   const pathname = filename.endsWith('/index.html') ? `/${filename.slice(0, -'index.html'.length)}` : `/${filename}`;
-  const canonical = new URL(pathname, origin.origin).href;
-  const resourceBase = new URL(canonical);
-  const socialImage = new URL(`${assetBasePath}assets/ogp.jpg`, origin.origin).href;
+  const logicalPath = pathname;
+  const mountedPath = `${publicPath === '/' ? '' : publicPath.slice(0, -1)}${logicalPath}`;
+  const canonical = new URL(mountedPath, origin.origin).href;
+  const resourceBase = schemaVersion === 2 ? new URL(logicalPath, 'https://site-relative.invalid') : new URL(canonical);
+  const socialImage = new URL(`${publicPath === '/' ? '' : publicPath.slice(0, -1)}${assetBasePath}assets/ogp.jpg`, origin.origin).href;
   const headers = new Headers({ 'cache-control': 'no-store', 'content-type': 'text/html; charset=utf-8' });
   const rewriter = rewriteStaticAssetReferences(
-    new HTMLRewriter().on('html', { element(element) { element.setAttribute('data-cms-static', 'true'); } }),
+    new HTMLRewriter().on('html', { element(element) { element.setAttribute('data-cms-static', 'true'); if (siteID) element.setAttribute('data-myhaco-site-id', siteID); } }),
     resourceBase,
     assetBasePath,
   );
-  return rewriter
+  if (schemaVersion === 2) await assertNoBaseElement(template, 'v2 auxiliary template');
+  const rendered = rewriter
+    .on('head', { element(element) { if (schemaVersion === 2) element.prepend(`<base data-myhaco-site-root href="${relativeURL(logicalPath, '/')}">`, { html: true }); } })
     .on('link[rel="canonical"]', { element(element) { element.setAttribute('href', canonical); } })
     .on('meta[property="og:url"]', { element(element) { element.setAttribute('content', canonical); } })
     .on('meta[name="twitter:url"]', { element(element) { element.setAttribute('content', canonical); } })
     .on('meta[property="og:image"], meta[name="twitter:image"]', { element(element) { element.setAttribute('content', socialImage); } })
     .transform(new Response(template, { headers }));
+  return schemaVersion === 2 ? rewriteV2References(rendered, logicalPath) : rendered;
 }
 const requiredTemplateSlots = {
   home: ['home-hero', 'home-works', 'creators', 'service-cards'],
@@ -494,7 +539,7 @@ function localMediaPath(value, publicOrigin, sourceURL) {
   if (decoded.some(part => part === '.' || part === '..' || /[\\\u0000-\u001f\u007f]/.test(part) || /%(?:2f|5c|2e|0[0-9a-f]|1[0-9a-f]|7f)/i.test(part))) fail(`missing local media mapping for ${sourceURL}`);
   return value;
 }
-export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '', templateLoader, publicOrigin, mapMediaURL, assetBasePath }) {
+export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'keroct', serviceBindings = '', templateLoader, publicOrigin, publicPath = '/', siteID, schemaVersion = 1, mapMediaURL, assetBasePath }) {
   assetBasePath = validatedAssetBasePath(assetBasePath);
   const data = preparePublication(envelope, { cmsOrigin, teamID, siteKey, serviceBindings });
   if (typeof templateLoader !== 'function' || typeof mapMediaURL !== 'function') fail('templateLoader and mapMediaURL are required');
@@ -509,7 +554,7 @@ export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'ke
     for (const [key, item] of Object.entries(value)) {
       if (typeof item === 'string' && mediaFields.has(key) && item) {
         const local = mapMediaURL(item);
-        value[key] = localMediaPath(local, publicOrigin, item);
+      value[key] = localMediaPath(local, publicOrigin, item);
       } else rewriteMedia(item);
     }
   };
@@ -519,7 +564,7 @@ export async function renderRelease({ envelope, cmsOrigin, teamID, siteKey = 'ke
     const route = templateFor(pathname);
     const template = await templateLoader(route.asset);
     const validatedTemplate = await validateReleaseTemplate(template, route);
-    const response = await renderDocument({ data, route, template: validatedTemplate, publicOrigin, assetBasePath, staticMode: true });
+    const response = await renderDocument({ data, route, template: validatedTemplate, publicOrigin, publicPath, siteID, schemaVersion, assetBasePath, staticMode: true });
     documents[filename] = await response.text();
   }
   return documents;
